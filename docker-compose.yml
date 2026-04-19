@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  chromadb:
+    image: chromadb/chroma:0.4.24
+    container_name: promengine-chromadb
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data/chroma:/chroma/chroma   # 数据持久化到项目目录下的 data/chroma
+    environment:
+      - IS_PERSISTENT=TRUE              # 开启持久化模式
+      - PERSIST_DIRECTORY=/chroma/chroma
+      - ANONYMIZED_TELEMETRY=FALSE      # 关闭遥测
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 如果你也需要 Ollama（可选，如果你已经在本地运行了 Ollama 可以不写这节）
+#  ollama:
+#    image: ollama/ollama:latest
+#    container_name: promengine-ollama
+#    ports:
+#      - "11434:11434"
+#    volumes:
+#      - ./data/ollama:/root/.ollama
+#    restart: unless-stopped
+    # 启动后需要手动进入容器拉取模型: docker exec -it promengine-ollama ollama pull nomic-embed-text
+
+#  打开终端（PowerShell 或 CMD），进入项目根目录 promengineV3/。
+#
+#  执行以下命令启动 ChromaDB：
+#
+#  bash
+#  docker-compose up -d chromadb
+#  等待几秒，检查服务是否正常运行：
+#
+#  bash
+#  docker ps
+#  你应该能看到 promengine-chromadb 容器状态为 Up。
+#
+#  如果 Ollama 也在 Docker 中运行，需要拉取嵌入模型：
+#
+#  bash
+#  docker exec -it promengine-ollama ollama pull nomic-embed-text

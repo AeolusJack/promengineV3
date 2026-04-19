@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.thirdexploration</groupId>
+        <artifactId>promengine-parent</artifactId>
+        <version>3.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>promengine-ecosystem</artifactId>
+    <packaging>pom</packaging>
+
+    <modules>
+        <module>promengine-adapter-litellm</module>
+        <module>promengine-adapter-mcp</module>
+        <module>promengine-adapter-openclaw</module>
+        <module>promengine-adapter-browseruse</module>
+        <module>promengine-adapter-feishu</module>
+<!--        <module>promengine-adapter-weixin</module>-->
+<!--        <module>promengine-adapter-wps</module>-->
+    </modules>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- 子模块版本继承父版本 -->
+            <dependency>
+                <groupId>com.thirdexploration</groupId>
+                <artifactId>promengine-adapter-litellm</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <!-- 其他适配器同理 -->
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- 所有适配器共享的依赖可在此声明 -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+    </dependencies>
+</project>

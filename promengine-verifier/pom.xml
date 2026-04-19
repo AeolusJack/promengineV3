@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.thirdexploration</groupId>
+        <artifactId>promengine-parent</artifactId>
+        <version>3.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>promengine-verifier</artifactId>
+    <packaging>jar</packaging>
+
+    <name>promengine-verifier</name>
+    <description>PromEngine 形式化验证沙箱模块</description>
+
+    <dependencies>
+        <!-- 内部依赖 -->
+        <dependency>
+            <groupId>com.thirdexploration</groupId>
+            <artifactId>promengine-core</artifactId>
+        </dependency>
+
+        <!-- Spring Boot -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+
+        <!-- YAML 解析 -->
+        <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
+        </dependency>
+
+        <!-- Chicory 纯 Java WebAssembly 运行时 -->
+        <dependency>
+            <groupId>com.dylibso.chicory</groupId>
+            <artifactId>runtime</artifactId>
+            <version>1.5.3</version>
+        </dependency>
+
+        <!-- Chicory 运行时编译器（可选，用于加速执行） -->
+        <dependency>
+            <groupId>com.dylibso.chicory</groupId>
+            <artifactId>compiler</artifactId>
+            <version>1.5.3</version>
+        </dependency>
+
+        <!-- Chicory WASI 支持（可选，如需文件系统访问） -->
+        <dependency>
+            <groupId>com.dylibso.chicory</groupId>
+            <artifactId>wasi</artifactId>
+            <version>1.5.3</version>
+        </dependency>
+
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+</project>

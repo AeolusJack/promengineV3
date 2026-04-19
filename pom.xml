@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!-- 引入 Spring Boot 3.x 父 POM，获得所有依赖版本管理 -->
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.2.5</version>   <!-- 当前最新稳定版 -->
+    <relativePath/>
+  </parent>
+
+  <groupId>com.thirdexploration</groupId>
+  <artifactId>promengine-parent</artifactId>
+  <version>3.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+
+  <name>promengine-parent</name>
+  <description>PromEngine Parent POM for Spring Boot 3.x</description>
+
+  <properties>
+    <java.version>21</java.version>                     <!-- Spring Boot 3.x 要求 Java 17 -->
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+    <!-- 第三方依赖版本（Spring Boot 已管理的无需再写） -->
+    <lucene.version>9.10.0</lucene.version>
+    <caffeine.version>3.1.8</caffeine.version>
+    <jackson.version>2.16.1</jackson.version>          <!-- Spring Boot 3.x 默认使用 2.16+ -->
+    <mockito.version>5.7.0</mockito.version>
+    <logback.version>1.4.14</logback.version>
+
+    <!-- Lombok 版本（Spring Boot 未强制管理，建议锁定） -->
+    <lombok.version>1.18.30</lombok.version>
+  </properties>
+
+  <modules>
+    <module>promengine-core</module>
+    <module>promengine-memory</module>
+    <module>promengine-model</module>
+    <module>promengine-executor</module>
+    <module>promengine-skill</module>
+    <module>promengine-evolution</module>
+    <module>promengine-cognition</module>
+    <module>promengine-swarm</module>
+    <module>promengine-neuro</module>
+    <module>promengine-temporal</module>
+    <module>promengine-verifier</module>
+    <module>promengine-ethics</module>
+    <module>promengine-prompt</module>
+    <module>promengine-apex</module>
+    <module>promengine-ecosystem</module>
+    <module>promengine-identity-proxy</module>
+    <module>promengine-psych-aid</module>
+    <module>promengine-devtools</module>
+    <module>promengine-runtime</module>
+    <module>promengine-web</module>
+    <module>promengine-spring-boot-starter</module>
+
+  </modules>
+  <dependencies>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <!-- 版本由 spring-boot-dependencies 管理，无需显式写 -->
+    </dependency>
+  </dependencies>
+  <!-- 统一管理所有依赖版本（包括内部模块和第三方库） -->
+  <!-- 统一管理所有依赖版本（包括内部模块和第三方库） -->
+  <dependencyManagement>
+    <dependencies>
+      <!-- 强制排除所有 reload4j 绑定 -->
+      <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-reload4j</artifactId>
+        <version>2.0.13</version>
+        <scope>provided</scope> <!-- 标记为 provided，阻止传递 -->
+      </dependency>
+      <dependency>
+        <groupId>ch.qos.reload4j</groupId>
+        <artifactId>reload4j</artifactId>
+        <version>1.2.22</version>
+        <scope>provided</scope>
+      </dependency>
+      <!-- 同时排除 commons-logging，避免与 spring-jcl 冲突 -->
+      <dependency>
+        <groupId>commons-logging</groupId>
+        <artifactId>commons-logging</artifactId>
+        <version>1.2</version>
+        <scope>provided</scope>
+      </dependency>
+      <!-- ===== 内部模块 ===== -->
+      <dependency>
+        <groupId>com.thirdexploration</groupId>
+        <artifactId>promengine-core</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.thirdexploration</groupId>
+        <artifactId>promengine-memory</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.thirdexploration</groupId>
+        <artifactId>promengine-executor</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.thirdexploration</groupId>
+        <artifactId>promengine-skill</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.thirdexploration</groupId>
+        <artifactId>promengine-evolution</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.thirdexploration</groupId>
+        <artifactId>promengine-model</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.thirdexploration</groupId>
+        <artifactId>promengine-runtime</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.thirdexploration</groupId>
+        <artifactId>promengine-web</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+          <groupId>com.thirdexploration</groupId>
+          <artifactId>promengine-spring-boot-starter</artifactId>
+          <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.thirdexploration</groupId>
+        <artifactId>promengine-cognition</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <!-- ===== 第三方依赖（Spring Boot 未覆盖或需要指定版本的） ===== -->
+      <!-- Lombok：编译时注解处理，所有模块均可使用 provided 范围 -->
+      <dependency>
+        <groupId>org.projectlombok</groupId>
+        <artifactId>lombok</artifactId>
+        <version>${lombok.version}</version>
+        <scope>provided</scope>
+      </dependency>
+
+      <!-- Lucene 全文检索 -->
+      <dependency>
+        <groupId>org.apache.lucene</groupId>
+        <artifactId>lucene-core</artifactId>
+        <version>${lucene.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.lucene</groupId>
+        <artifactId>lucene-queryparser</artifactId>
+        <version>${lucene.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.lucene</groupId>
+        <artifactId>lucene-analysis-common</artifactId>
+        <version>${lucene.version}</version>
+      </dependency>
+
+      <!-- Caffeine 缓存 -->
+      <dependency>
+        <groupId>com.github.ben-manes.caffeine</groupId>
+        <artifactId>caffeine</artifactId>
+        <version>${caffeine.version}</version>
+      </dependency>
+
+      <!-- Jackson（Spring Boot 已管理，此处仅为显式锁定，可选） -->
+      <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>${jackson.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.fasterxml.jackson.datatype</groupId>
+        <artifactId>jackson-datatype-jsr310</artifactId>
+        <version>${jackson.version}</version>
+      </dependency>
+
+      <!-- 测试依赖（版本管理） -->
+      <dependency>
+        <groupId>org.mockito</groupId>
+        <artifactId>mockito-core</artifactId>
+        <version>${mockito.version}</version>
+        <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>ch.qos.logback</groupId>
+        <artifactId>logback-classic</artifactId>
+        <version>${logback.version}</version>
+      </dependency>
+
+      <dependency>
+      <groupId>org.springframework.ai</groupId>
+      <artifactId>spring-ai-bom</artifactId>
+      <version>1.0.0-M7</version>
+      <type>pom</type>
+      <scope>import</scope>
+    </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <!-- 构建插件管理（主要让子模块继承 Spring Boot 的打包插件配置） -->
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-maven-plugin</artifactId>
+          <version>${spring-boot.version}</version>
+          <configuration>
+            <excludes>
+              <exclude>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok</artifactId>
+              </exclude>
+              <!-- 强制排除 reload4j 相关 -->
+              <exclude>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-reload4j</artifactId>
+              </exclude>
+              <exclude>
+                <groupId>ch.qos.reload4j</groupId>
+                <artifactId>reload4j</artifactId>
+              </exclude>
+              <exclude>
+                <groupId>commons-logging</groupId>
+                <artifactId>commons-logging</artifactId>
+              </exclude>
+            </excludes>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>3.11.0</version>
+          <configuration>
+            <source>${java.version}</source>
+            <target>${java.version}</target>
+          </configuration>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
+
+</project>

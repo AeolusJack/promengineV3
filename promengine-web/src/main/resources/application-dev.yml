@@ -1,0 +1,48 @@
+# =====================================================
+# PromEngine 开发环境配置 (application-dev.yml)
+# =====================================================
+
+spring:
+  devtools:
+    restart:
+      enabled: true
+    livereload:
+      enabled: true
+
+promengine:
+  data-dir: ./data-dev
+  security:
+    verifier:
+      wasm-enabled: false        # 开发环境可关闭 Wasm 验证
+      intent-filters-enabled: true
+      execution-mode: INTERPRETER  # 开发环境使用解释模式，调试更方便
+      compiler-fallback-enabled: true
+  # 开发环境默认使用本地 Ollama，降低成本
+  models:
+    routing:
+      fallback-chain:
+        - ollama
+    providers:
+      - id: ollama
+        type: ollama
+        endpoint: http://localhost:11434
+        models:
+          - name: gemma4-custom:q4
+            cost-per-1k-tokens: 0.0
+          - name: qwen2.5:14b
+            cost-per-1k-tokens: 0.0
+
+  apex:
+    enabled: false   # 开发环境关闭成本追踪
+
+  devtools:
+    debug-trace-enabled: true
+    hot-reload: true
+
+  ui:
+    thinking-ripple: true
+
+logging:
+  level:
+    com.thirdexploration.promengine: DEBUG
+    com.thirdexploration.promengine.memory: TRACE   # 查看详细记忆操作

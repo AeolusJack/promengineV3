@@ -1,0 +1,60 @@
+# =====================================================
+# PromEngine 生产环境配置 (application-prod.yml)
+# =====================================================
+
+promengine:
+  data-dir: /var/lib/promengine/data
+
+  cognition:
+    mode: carbon   # 生产环境推荐碳基模式
+
+  memory:
+    vector:
+      engine: lancedb
+    warmup:
+      async: true
+      create-snapshot: true
+    export:
+      checksum-algorithm: SHA-256
+      merkle-tree-enabled: true
+
+  models:
+    providers:
+      - id: siliconflow
+        api-key: ${SILICONFLOW_API_KEY}
+      - id: aliyun-bailian
+        api-key: ${BAILIAN_API_KEY}
+    routing:
+      strategy: semantic-budget-aware
+      load-aware: true
+
+  apex:
+    enabled: true
+    budget:
+      daily: 5.00
+      monthly: 50.00
+
+  security:
+    verifier:
+      enabled: true
+      wasm-enabled: true         # 生产环境开启 Wasm 沙箱
+      intent-filters-enabled: true
+      execution-mode: COMPILER   # 生产环境使用编译模式，性能更好
+      compiler-fallback-enabled: true
+      wasi-enabled: false        # 生产环境建议关闭 WASI，减少攻击面
+
+  ethics:
+    enabled: true
+
+  devtools:
+    debug-trace-enabled: false   # 生产环境必须关闭调试追踪
+
+  ui:
+    thinking-ripple: false   # 可关闭以节省前端资源
+
+logging:
+  level:
+    root: WARN
+    com.thirdexploration.promengine: INFO
+  file:
+    name: ${promengine.data-dir}/logs/promengine.log

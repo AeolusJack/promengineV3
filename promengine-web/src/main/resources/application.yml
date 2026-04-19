@@ -1,0 +1,319 @@
+# =====================================================
+# PromEngine 主配置文件 (application.yml)
+# 所有环境通用配置
+# =====================================================
+
+spring:
+  mvc:
+    async:
+      request-timeout: 120000   # 与 SseEmitter 超时一致
+  mandatory-file-encoding: UTF-8
+  ai:
+    # Ollama 嵌入模型配置
+    ollama:
+      embedding:
+        enabled: true
+        model: nomic-embed-text  # 或其他支持的嵌入模型
+      base-url: http://localhost:11434
+      chat:
+        enabled: true
+        model: gemma4-custom:q4
+
+    # ChromaDB 向量存储配置
+    vectorstore:
+      chroma:
+        host: http://localhost
+        port: 8000
+        collection-name: promengine_memories
+        initialize-schema: true
+#        client-type: PERSISTENT  # 关键：指定为持久化（嵌入式）客户端
+#        data-path: /data/chroma # 关键：你的本地持久化路径
+  application:
+    name: promengine
+  profiles:
+    active: dev   # 默认激活开发环境，生产环境通过 -Dspring.profiles.active=prod 覆盖
+  main:
+    banner-mode: CONSOLE  #off   关闭banner显示
+    allow-bean-definition-overriding: true  #允许 Spring 用后一个 Bean 覆盖前一个
+# PromEngine 自定义配置
+promengine:
+  # 数据存储根目录
+  data-dir: ./data
+
+  # 运行模式：silicon / carbon
+  mode: carbon
+
+  # -------------------------------------------------
+  # 认知生理配置 (cognition)
+  # -------------------------------------------------
+  cognition:
+    mode: ${promengine.mode}   # 引用全局模式
+    carbon-fuel:
+      enabled: true
+      max-fuel: 100
+      recovery-per-hour: 10
+      boost-limit-per-day: 3
+      boost-amount: 30
+
+  # -------------------------------------------------
+  # 记忆存储配置 (memory)
+  # -------------------------------------------------
+  memory:
+    backend: tiered
+    hot-retention: 30d
+    warm-retention: 90d
+    warm-storage:
+      partition-by: month
+      summary-strategy: jsonl_summary
+      compaction:
+        enabled: true
+        schedule: "0 0 3 1 * ?"
+        min-file-size-to-merge: 100MB
+    cold-storage:
+      archive-partition-by: year
+    retrieval:
+      default-time-window: 30d
+      allow-cold-scan-by-default: false
+    warmup:
+      async: true
+      create-snapshot: true
+      snapshot-interval: 1d
+      progress-tracking: true
+    export:
+      checksum-algorithm: SHA-256
+      merkle-tree-enabled: true
+      split-size: 4GB
+    forgetting:
+      soft-delete-period: 30d
+      auto-weathering-enabled: false
+    vector:
+      engine: chroma
+      dimension: 768   # nomic-embed-text 的默认维度
+      fallback: none
+    graph:
+      enabled: false
+      backend: falkordb
+
+  # -------------------------------------------------
+  # 模型网关配置 (models)
+  # -------------------------------------------------
+  models:
+    providers:
+      - id: siliconflow
+        type: openai-compatible
+        endpoint: https://api.siliconflow.cn/v1
+        api-key: ${SILICONFLOW_API_KEY:}
+        models:
+          - name: DeepSeek-V3
+            cost-per-1k-tokens: 0.001
+            max-context-length: 128000
+          - name: Qwen2.5-7B
+            cost-per-1k-tokens: 0.0005
+            max-context-length: 32768
+      - id: aliyun-bailian
+        type: openai-compatible
+        endpoint: https://dashscope.aliyuncs.com/compatible-mode/v1
+        api-key: ${BAILIAN_API_KEY:}
+        models:
+          - name: qwen-max
+            cost-per-1k-tokens: 0.002
+            max-context-length: 131072
+      - id: local-ollama
+        type: ollama
+        endpoint: http://localhost:11434
+        models:
+          - name: qwen2.5:14b
+            cost-per-1k-tokens: 0.0
+            max-context-length: 4096
+          - name: gemma4-custom:q4
+            cost-per-1k-tokens: 0.0
+            max-context-length: 32768
+    routing:
+      strategy: semantic-budget-aware
+      complexity-model: local-onnx:tiny-bert
+      load-aware: true
+      local-model-max-queue: 3
+      load-penalty-weight: 0.5
+      fallback-chain:
+        - siliconflow
+        - aliyun-bailian
+        - local-ollama
+    circuit-breaker:
+      failure-threshold: 5
+      timeout: 30
+      half-open-max-requests: 3
+    offline-fallback: local-onnx:tinyllama
+
+  # -------------------------------------------------
+  # API 管控与成本中心 (apex)
+  # -------------------------------------------------
+  apex:
+    enabled: true
+    budget:
+      daily: 5.00
+      monthly: 50.00
+      alert-thresholds: [0.8, 0.95]
+    audit:
+      enabled: true
+      path: ${promengine.data-dir}/apex-audit
+
+  # -------------------------------------------------
+  # 安全配置 (security)
+  # -------------------------------------------------
+  security:
+    verifier:
+      enabled: true
+      wasm-path: ${promengine.data-dir}/verifier/verifier.wasm
+      wasm-enabled: false        # 默认关闭，生产环境按需开启
+      intent-filters-enabled: true
+      # Chicory 执行模式配置
+      execution-mode: COMPILER   # INTERPRETER / COMPILER / AOT
+      compiler-fallback-enabled: true
+      wasi-enabled: false        # 是否允许 Wasm 模块访问文件系统
+      virtual-fs-root: ${promengine.data-dir}/wasi
+
+  # -------------------------------------------------
+  # 伦理配置 (ethics)
+  # -------------------------------------------------
+  ethics:
+    enabled: true
+    audit-enabled: true
+    audit-path: ${promengine.data-dir}/audit
+
+  # -------------------------------------------------
+  # 微 Agent 集群 (swarm)
+  # -------------------------------------------------
+  swarm:
+    enabled: true
+    max-micro-agents: 50
+    max-concurrent-agents: 20
+    agent-timeout: 30s
+    global-model-rate-limit: 20
+    enforce-structured-output: true
+
+  # -------------------------------------------------
+  # 主动性配置 (proactive)
+  # -------------------------------------------------
+  proactive:
+    l1-enabled: true
+    quick-clarify-max-per-hour: 2
+
+  # -------------------------------------------------
+  # 提示词管理 (prompt)
+  # -------------------------------------------------
+  prompt:
+    templates-path: ./configs/prompts/
+    default-template: default
+    compression:
+      enabled: true
+      target-max-tokens: 7000
+      force-chunk-threshold: 0.8
+      chunk-overlap-ratio: 0.1
+    evaluation:
+      enabled: false
+      log-prompt: false
+    self-budgeter:
+      enabled: true
+      default-output-tokens: 2000
+
+  # -------------------------------------------------
+  # 进化引擎 (evolution)
+  # -------------------------------------------------
+  evolution:
+    regret:
+      enabled: false
+    reflection-enabled: true
+    adversarial-enabled: false
+
+  # -------------------------------------------------
+  # 生态适配器 (ecosystem)
+  # -------------------------------------------------
+  ecosystem:
+    mcp:
+      enabled: true
+      servers:
+        - http://localhost:3000/mcp
+    browser-use:
+      enabled: false
+      mode: rest-bridge
+    openclaw:
+      enabled: false
+      skills-path: ./skills/
+      sandbox: docker
+    platforms:
+      feishu:
+        enabled: false
+        api-endpoint: https://open.feishu.cn
+        app-id: ${FEISHU_APP_ID:}
+        app-secret: ${FEISHU_APP_SECRET:}
+      weixin:
+        enabled: false
+        ilink-endpoint: https://ilinkai.weixin.qq.com/v1
+      wps:
+        enabled: false
+
+  # -------------------------------------------------
+  # 数字身份代理 (identity-proxy)
+  # -------------------------------------------------
+  identity-proxy:
+    enabled: false
+
+  # -------------------------------------------------
+  # 开发者工具 (devtools)
+  # -------------------------------------------------
+  devtools:
+    debug-trace-enabled: false
+    shadow-mode-enabled: false
+    hot-reload: true
+
+  # -------------------------------------------------
+  # 神经可观测性 (neuro)
+  # -------------------------------------------------
+  neuro:
+    thinking-ripple-enabled: true
+    ripple-sync-mode: chunk-aligned
+
+  # -------------------------------------------------
+  # 主观时间感知 (temporal)
+  # -------------------------------------------------
+  temporal:
+    enabled: true
+    density-window-seconds: 300
+
+  # -------------------------------------------------
+  # UI 配置 (ui)
+  # -------------------------------------------------
+  ui:
+    thinking-ripple: true
+    ripple-sync-mode: chunk-aligned
+    open-webui:
+      enabled: false
+      port: 3000
+
+  # -------------------------------------------------
+  # 目标追踪 (goal-tracker)
+  # -------------------------------------------------
+  goal-tracker:
+    enabled: false
+    review-interval: 7d
+    checkin-window: "Sat,Sun 09:00-12:00"
+
+  # -------------------------------------------------
+  # 事件日志配置 (event-log)
+  # -------------------------------------------------
+  event-log:
+    rotation: daily
+    compress: true
+    retention-days: 90
+    disk-usage-warning-threshold: 0.8
+    disk-usage-critical-threshold: 0.9
+
+# =====================================================
+# 日志级别全局默认（可被 logback-spring.xml 覆盖）
+# =====================================================
+logging:
+  level:
+    root: INFO
+    com.thirdexploration.promengine: DEBUG
+    org.springframework.web: INFO
+    org.springframework.boot: INFO
