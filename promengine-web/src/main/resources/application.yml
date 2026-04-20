@@ -93,7 +93,26 @@ promengine:
     graph:
       enabled: false
       backend: falkordb
+    # prompt提示词组合时检索向量存储库，lucen等热存储，冷存储，进行算子融合
+    retrieval-policy:
+      hot-enabled: true
+      warm-enabled: false        # 初期温存储数据少，可暂时关闭
+      lucene-enabled: true
+      vector-enabled: true
+      max-memory-chars: 4000      # 记忆部分最多 1500 字符
+      max-per-memory-chars: 200   # 单条记忆最多 250 字符
+      hot-top-k: 3
+      lucene-top-k: 5
+      vector-top-k: 10
+      fusion-top-k: 8
+      vector-weight: 1.2         # 提高向量检索的权重
 
+      # 根据任务复杂度覆盖配置（可选）
+      complexity-overrides:
+        HIGH:
+          vector-enabled: true
+          vector-top-k: 15
+          lucene-enabled: false  # 复杂任务只用语义检索
   # -------------------------------------------------
   # 模型网关配置 (models)
   # -------------------------------------------------
@@ -259,6 +278,20 @@ promengine:
     enabled: false
 
   # -------------------------------------------------
+  # 执行工具和沙箱机制 execute
+  # -------------------------------------------------
+  orchestrator:
+    # SIMPLE 或 REACT 龙虾模式
+    mode: REACT
+    max-steps: 8
+    tool-use-enabled: true
+    sandbox:
+      enabled: true
+      type: WASM               # WASM, DOCKER, DISABLED
+      wasm-modules-path: ./wasm-modules/
+      workspace-path: ./sandbox-workspace/
+    verbose-logging: true   # 设为 false 可关闭详细日志，react模式下的模型指挥追踪
+  # -------------------------------------------------
   # 开发者工具 (devtools)
   # -------------------------------------------------
   devtools:
@@ -311,9 +344,9 @@ promengine:
 # =====================================================
 # 日志级别全局默认（可被 logback-spring.xml 覆盖）
 # =====================================================
-logging:
-  level:
-    root: INFO
-    com.thirdexploration.promengine: DEBUG
-    org.springframework.web: INFO
-    org.springframework.boot: INFO
+#logging:
+#  level:
+#    root: INFO
+#    com.thirdexploration.promengine: DEBUG
+#    org.springframework.web: INFO
+#    org.springframework.boot: INFO

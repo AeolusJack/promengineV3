@@ -1,11 +1,9 @@
 package com.thirdexploration.promengine.memory.service;
 
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.thirdexploration.promengine.core.MemoryService;
-import com.thirdexploration.promengine.core.domain.MemoryEntry;
-import com.thirdexploration.promengine.core.domain.Query;
-import com.thirdexploration.promengine.core.domain.RetrievalStrategy;
-import com.thirdexploration.promengine.core.domain.SearchResult;
+import com.thirdexploration.promengine.core.domain.*;
 import com.thirdexploration.promengine.core.util.IdGenerator;
 import com.thirdexploration.promengine.memory.config.MemoryProperties;
 import com.thirdexploration.promengine.memory.model.MemoryRecord;
@@ -112,6 +110,42 @@ public class DefaultMemoryService implements MemoryService {
     public SearchResult retrieve(Query query, RetrievalStrategy strategy) {
         float[] queryVector = embeddingService.embed(query.getText());
         return retrievalEngine.retrieve(query, strategy, queryVector);
+    }
+    @Override
+    public Pair<SearchResult, RetrievalDetails> retrieveWithDetails(Query query, RetrievalStrategy strategy) {
+        // 如果没有传入向量，则通过文本生成
+        float[] vector = embeddingService.embed(query.getText());
+
+        // 调用检索引擎获取带详情的原始结果
+
+        Pair<SearchResult, RetrievalEngine.FusionDetails> fusionDetailsPair = retrievalEngine.retrieveWithDetails(query, strategy, vector);
+
+        SearchResult result = fusionDetailsPair.left();
+        RetrievalEngine.FusionDetails fusionDetails = fusionDetailsPair.right();
+
+        // 将内部 FusionDetails 转换为对外暴露的 RetrievalDetails（避免暴露内部类）
+        RetrievalDetails details = new RetrievalDetailsAdapter(fusionDetails);
+
+        return Pair.of(result, details);
+    }
+
+    /**
+     * 适配器，将内部 FusionDetails 转换为 MemoryService.RetrievalDetails
+     */
+    private record RetrievalDetailsAdapter(RetrievalEngine.FusionDetails fusionDetails)
+            implements RetrievalDetails {
+        @Override
+        public List<SearchResult.MemoryHit> getHotHits() { return fusionDetails.getHotHits(); }
+        @Override
+        public List<SearchResult.MemoryHit> getWarmSummaryHits() { return fusionDetails.getWarmSummaryHits(); }
+        @Override
+        public List<SearchResult.MemoryHit> getLuceneHits() { return fusionDetails.getLuceneHits(); }
+        @Override
+        public List<SearchResult.MemoryHit> getVectorHits() { return fusionDetails.getVectorHits(); }
+        @Override
+        public List<SearchResult.MemoryHit> getFusedHits() { return fusionDetails.getFusedHits(); }
+        @Override
+        public long getTookMs() { return fusionDetails.getTookMs(); }
     }
 
     @Override

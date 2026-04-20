@@ -1,9 +1,9 @@
 package com.thirdexploration.promengine.core;
 
-import com.thirdexploration.promengine.core.domain.MemoryEntry;
-import com.thirdexploration.promengine.core.domain.Query;
-import com.thirdexploration.promengine.core.domain.RetrievalStrategy;
-import com.thirdexploration.promengine.core.domain.SearchResult;
+
+import com.thirdexploration.promengine.core.domain.*;
+
+import java.util.List;
 
 /**
  * 统一记忆服务接口，抽象了分层存储、检索与遗忘。
@@ -25,6 +25,29 @@ public interface MemoryService {
      * @return 检索结果
      */
     SearchResult retrieve(Query query, RetrievalStrategy strategy);
+
+
+
+    /**
+     * 执行多路检索并返回融合详情。
+     *
+     * @param query        查询条件
+     * @param strategy     检索策略
+     * @return Pair 左侧为 SearchResult，右侧为融合详情对象
+     */
+    Pair<SearchResult, RetrievalDetails> retrieveWithDetails(Query query, RetrievalStrategy strategy);
+
+    /**
+     * 融合详情对象（作为内部接口，也可移到独立类）
+     */
+    interface RetrievalDetails {
+        List<SearchResult.MemoryHit> getHotHits();
+        List<SearchResult.MemoryHit> getWarmSummaryHits();
+        List<SearchResult.MemoryHit> getLuceneHits();
+        List<SearchResult.MemoryHit> getVectorHits();
+        List<SearchResult.MemoryHit> getFusedHits();
+        long getTookMs();
+    }
 
     /**
      * 遗忘特定记忆（软删除或硬删除）。

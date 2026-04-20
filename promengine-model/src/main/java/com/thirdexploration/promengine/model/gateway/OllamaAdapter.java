@@ -131,6 +131,7 @@ public class OllamaAdapter implements ModelAdapter {
 
         try {
             String jsonBody = objectMapper.writeValueAsString(body);
+            log.info("最终请求的json：{}",jsonBody);
             Request httpRequest = new Request.Builder()
                     .url(endpoint + "/api/generate")
                     .post(RequestBody.create(jsonBody, MediaType.parse("application/json")))
@@ -163,7 +164,7 @@ public class OllamaAdapter implements ModelAdapter {
                     });
 
             return lineStream
-                    .peek(line -> log.debug("Ollama raw line: {}", line))
+//                    .peek(line -> log.info("Ollama raw line: {}", line))
                     .map(line -> parseChunk(line, includeThinking))
                     .filter(Objects::nonNull)
                     .takeWhile(chunk -> !Thread.currentThread().isInterrupted());
@@ -180,19 +181,16 @@ public class OllamaAdapter implements ModelAdapter {
             if (line == null || line.isBlank()) return null;
             JsonNode node = objectMapper.readTree(line);
             boolean done = node.path("done").asBoolean(false);
-
-            // 1. 如果启用思考且存在 thinking 字段
+            // 1. 如果启用思考且存在 thinking 字段（无论是否为空字符串）
             if (includeThinking && node.has("thinking")) {
                 String thinking = node.path("thinking").asText();
-                if (!thinking.isEmpty()) {
-                    // 可加前缀便于调试，或由前端识别，此处加前缀保证可见性
-                    return CompletionChunk.builder()
-                            .delta("[思考] " + thinking)
-                            .last(false)
-                            .build();
-                }
+                // 即使为空也返回一个块，让前端知道思考正在进行（可选）
+                // 如果希望过滤真正的空内容，可以保留 !thinking.isEmpty() 判断
+                return CompletionChunk.builder()
+                        .delta("[思考] " + thinking)   // 即使 thinking 为空，也发送一个标记
+                        .last(false)
+                        .build();
             }
-
             // 2. 正式回复内容
             String response = node.path("response").asText("");
             if (!response.isEmpty()) {
@@ -237,13 +235,13 @@ public class OllamaAdapter implements ModelAdapter {
         body.put("model", request.getModelId());
         body.put("prompt", request.getPrompt());
         body.put("stream", stream);
-
+        Map<String, Object> options = new HashMap<>();
         // 根据 includeThinking 决定是否添加 "think" 参数（Gemma 特有）
         if (includeThinking) {
-            body.put("think", true);
+//            body.put("think", true);
+            options.put("think",true);
         }
 
-        Map<String, Object> options = new HashMap<>();
         options.put("temperature", request.getTemperature());
         options.put("num_predict", request.getMaxTokens() > 0 ? request.getMaxTokens() : 512);
         body.put("options", options);

@@ -2,8 +2,8 @@ package com.thirdexploration.promengine.prompt;
 
 import com.thirdexploration.promengine.core.CognitivePhysiology;
 import com.thirdexploration.promengine.core.MemoryService;
+import com.thirdexploration.promengine.core.ToolInfoProvider;
 import com.thirdexploration.promengine.core.domain.*;
-import com.thirdexploration.promengine.executor.ToolRegistry;
 import com.thirdexploration.promengine.temporal.SubjectiveTimeService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -18,7 +18,7 @@ public class ContextBuilder {
     private final MemoryService memoryService;
     private final CognitivePhysiology physiology;
     private final SubjectiveTimeService timeService;
-    private final ToolRegistry toolRegistry;
+    private final ToolInfoProvider toolInfoProvider;
 
     public Map<String, Object> build(TaskContext ctx) {
         Map<String, Object> vars = new HashMap<>();
@@ -46,7 +46,7 @@ public class ContextBuilder {
                 .map(h -> Map.of("summary", h.getContent(), "subjective_age", "recently"))
                 .toList());
 
-        vars.put("tools", toolRegistry.listAvailable().stream().map(t -> t.getName()).toList());
+        vars.put("tools", toolInfoProvider.getAvailableTools().stream().map(t -> t.name()).toList());
 
         return vars;
     }

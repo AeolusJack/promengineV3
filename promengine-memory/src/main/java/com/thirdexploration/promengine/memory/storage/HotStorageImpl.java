@@ -182,6 +182,14 @@ public class HotStorageImpl implements HotStorage {
                         rs.getString("metadata"),
                         new TypeReference<Map<String, Object>>() {}
                 );
+
+                // 安全处理 ttl_seconds 字段，允许 NULL
+                Long ttlSeconds = null;
+                Object ttlObj = rs.getObject("ttl_seconds");
+                if (ttlObj != null && !rs.wasNull()) {
+                    ttlSeconds = ((Number) ttlObj).longValue();
+                }
+
                 return StoredMemoryEntry.builder()
                         .id(rs.getString("id"))
                         .userId(rs.getString("user_id"))
@@ -191,10 +199,12 @@ public class HotStorageImpl implements HotStorage {
                         .type(MemoryEntry.MemoryType.valueOf(rs.getString("memory_type")))
                         .importance(rs.getFloat("importance"))
                         .metadata(metadata)
-                        .ttlSeconds(rs.getObject("ttl_seconds", Long.class))
+                        .ttlSeconds(ttlSeconds)
                         .storageTier("HOT")
                         .build();
             } catch (Exception e) {
+                // 增强日志：打印出错行的关键信息
+                log.error("Failed to map row for memory id: {}", rs.getString("id"), e);
                 throw new SQLException("Failed to map row", e);
             }
         }

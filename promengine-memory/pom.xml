@@ -187,6 +187,10 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>com.thirdexploration</groupId>
+            <artifactId>promengine-model</artifactId>
+        </dependency>
     </dependencies>
 
     <dependencyManagement>

@@ -26,6 +26,7 @@ public class PromptManagerImpl implements PromptManager {
 
     @Override
     public RenderedPrompt render(TaskContext ctx) {
+
         String templateId = ctx.getTaskType() != null ? ctx.getTaskType() : properties.getDefaultTemplate();
         PromptTemplate template = templateRegistry.get(templateId);
         if (template == null) {
@@ -38,6 +39,15 @@ public class PromptManagerImpl implements PromptManager {
         if (properties.getCompression().isEnabled()) {
             rendered = compressor.compress(rendered, properties.getCompression().getTargetMaxTokens());
         }
+
+        //观测日志开始
+        String finalPrompt = rendered;
+        // 日志输出（截断处理，避免过长）
+        String preview = finalPrompt.length() > 500
+                ? finalPrompt.substring(0, 500) + "... [总长度: " + finalPrompt.length() + "]"
+                : finalPrompt;
+        log.info("=== 系统提示词 ===\n{}", preview);
+        //观测日志结束
 
         return RenderedPrompt.builder()
                 .templateId(templateId)

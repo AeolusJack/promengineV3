@@ -14,6 +14,38 @@ public final class RRFusion {
 
     private RRFusion() {}
 
+    /**
+     * 带权重的 RRF 融合
+     * @param rankedHits 包含每条命中的原始排名和权重
+     * @param topK 返回结果数量
+     * @return 融合排序后的结果
+     */
+    public static List<SearchResult.MemoryHit> fuseWithWeights(List<RetrievalEngine.RankedHit> rankedHits, int topK) {
+        Map<String, Double> rrfScores = new HashMap<>();
+        Map<String, SearchResult.MemoryHit> docMap = new HashMap<>();
+
+        for (RetrievalEngine.RankedHit rh : rankedHits) {
+            SearchResult.MemoryHit hit = rh.hit();
+            docMap.putIfAbsent(hit.getMemoryId(), hit);
+            // 权重 × 1/(K+rank)
+            double weightedScore = rh.weight() / (K + rh.rank());
+            rrfScores.merge(hit.getMemoryId(), weightedScore, Double::sum);
+        }
+
+        return rrfScores.entrySet().stream()
+                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                .limit(topK)
+                .map(entry -> {
+                    SearchResult.MemoryHit hit = docMap.get(entry.getKey());
+                    return SearchResult.MemoryHit.builder()
+                            .memoryId(hit.getMemoryId())
+                            .content(hit.getContent())
+                            .timestamp(hit.getTimestamp())
+                            .score(entry.getValue().floatValue())
+                            .build();
+                })
+                .toList();
+    }
     public static List<SearchResult.MemoryHit> fuse(List<SearchResult.MemoryHit> hits, int topK) {
         // 按来源分组，计算每个文档的 RRF 分数
         Map<String, Double> rrfScores = new HashMap<>();
