@@ -10,7 +10,7 @@ spring:
       enabled: true
 
 promengine:
-  data-dir: ./data-dev
+  data-dir: ./data
   security:
     verifier:
       wasm-enabled: false        # 开发环境可关闭 Wasm 验证

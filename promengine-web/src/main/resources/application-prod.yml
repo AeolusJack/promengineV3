@@ -3,58 +3,211 @@
 # =====================================================
 
 promengine:
+  # 数据存储根目录（生产环境使用持久化卷）
   data-dir: /var/lib/promengine/data
 
+  # 运行模式
+  mode: carbon
+
+  # -------------------------------------------------
+  # 认知生理配置
+  # -------------------------------------------------
   cognition:
-    mode: carbon   # 生产环境推荐碳基模式
+    mode: ${promengine.mode}
+    carbon-fuel:
+      enabled: true
+      max-fuel: 100
+      recovery-per-hour: 10
+      boost-limit-per-day: 3
+      boost-amount: 30
 
-  memory:
-    vector:
-      engine: lancedb
-    warmup:
-      async: true
-      create-snapshot: true
-    export:
-      checksum-algorithm: SHA-256
-      merkle-tree-enabled: true
-
+  # -------------------------------------------------
+  # 模型网关配置
+  # -------------------------------------------------
   models:
     providers:
       - id: siliconflow
+        type: openai-compatible
+        endpoint: https://api.siliconflow.cn/v1
         api-key: ${SILICONFLOW_API_KEY}
+        models:
+          - name: DeepSeek-V3
+            cost-per-1k-tokens: 0.001
       - id: aliyun-bailian
+        type: openai-compatible
+        endpoint: https://dashscope.aliyuncs.com/compatible-mode/v1
         api-key: ${BAILIAN_API_KEY}
+        models:
+          - name: qwen-max
+            cost-per-1k-tokens: 0.002
+      - id: local-ollama
+        type: ollama
+        endpoint: http://localhost:11434
+        models:
+          - name: qwen2.5:14b
+            cost-per-1k-tokens: 0.0
     routing:
       strategy: semantic-budget-aware
       load-aware: true
+      fallback-chain:
+        - siliconflow
+        - aliyun-bailian
+        - local-ollama
+    circuit-breaker:
+      failure-threshold: 3
+      timeout: 60
+      half-open-max-requests: 2
 
+  # -------------------------------------------------
+  # 编排器配置
+  # -------------------------------------------------
+  orchestrator:
+    mode: REACT
+    max-steps: 10
+    tool-use-enabled: true
+    verbose-logging: false     # 生产环境关闭详细日志
+    sandbox:
+      enabled: true
+      type: WASM
+      wasm-modules-path: ${promengine.data-dir}/wasm-modules
+      workspace-path: ${promengine.data-dir}/sandbox-workspace
+
+  # -------------------------------------------------
+  # 提示词配置
+  # -------------------------------------------------
+  prompt:
+    templates-path: /etc/promengine/prompts/
+    default-template: default
+    compression:
+      enabled: true
+      target-max-tokens: 7000
+
+  # -------------------------------------------------
+  # API 管控与成本中心
+  # -------------------------------------------------
   apex:
     enabled: true
     budget:
       daily: 5.00
       monthly: 50.00
+      alert-thresholds: [0.8, 0.95]
+    audit:
+      enabled: true
+      path: ${promengine.data-dir}/apex-audit
 
+  # -------------------------------------------------
+  # 安全配置
+  # -------------------------------------------------
   security:
     verifier:
       enabled: true
-      wasm-enabled: true         # 生产环境开启 Wasm 沙箱
+      wasm-path: ${promengine.data-dir}/verifier/verifier.wasm
+      wasm-enabled: true
       intent-filters-enabled: true
-      execution-mode: COMPILER   # 生产环境使用编译模式，性能更好
+      execution-mode: COMPILER
       compiler-fallback-enabled: true
-      wasi-enabled: false        # 生产环境建议关闭 WASI，减少攻击面
+      wasi-enabled: false
 
+  # -------------------------------------------------
+  # 伦理配置
+  # -------------------------------------------------
   ethics:
     enabled: true
+    audit-enabled: true
+    audit-path: ${promengine.data-dir}/audit
 
+  # -------------------------------------------------
+  # 开发者工具（生产环境必须关闭调试）
+  # -------------------------------------------------
   devtools:
-    debug-trace-enabled: false   # 生产环境必须关闭调试追踪
+    debug-trace-enabled: false
+    shadow-mode-enabled: false
+    hot-reload: false
 
+  # -------------------------------------------------
+  # UI 配置
+  # -------------------------------------------------
   ui:
-    thinking-ripple: false   # 可关闭以节省前端资源
+    thinking-ripple: false
+    ripple-sync-mode: chunk-aligned
 
+  # -------------------------------------------------
+  # 事件日志配置
+  # -------------------------------------------------
+  event-log:
+    rotation: daily
+    compress: true
+    retention-days: 90
+    disk-usage-warning-threshold: 0.8
+    disk-usage-critical-threshold: 0.9
+
+# =====================================================
+# Aeon 全域认知记忆系统配置（新架构）
+# =====================================================
+aeon:
+  memory:
+    # 元策略配置文件路径（生产环境使用绝对路径）
+    meta-policy-path: /etc/promengine/meta-policies.json
+
+    # 检索配置
+    retrieval:
+      deduplication-enabled: true
+      verified-weight-boost: 1.5
+      default-top-k: 10
+      cross-domain:
+        strategies: [parallel, augment, bridge]
+
+    # 进化配置
+    evolution:
+      decay-enabled: true
+      decay-cron: "0 0 3 * * ?"
+      tame:
+        enabled: true
+        evaluator-memory-size: 20000
+      memevolve:
+        enabled: false
+
+    # 治理配置
+    governance:
+      enabled: true
+      audit:
+        enabled: true
+        log-path: ${promengine.data-dir}/audit/memory
+
+    # 向量存储配置（生产环境推荐 Milvus）
+    vector:
+      engine: milvus
+      dimension: 768
+      milvus-host: milvus-service
+      milvus-port: 19530
+      collection-name: aeon_memories
+
+# =====================================================
+# Spring 框架配置
+# =====================================================
+spring:
+  ai:
+    ollama:
+      base-url: http://ollama-service:11434
+      chat:
+        enabled: true
+        model: qwen2.5:14b
+      embedding:
+        enabled: true
+        model: nomic-embed-text
+    vectorstore:
+      chroma:
+        enabled: false   # 生产环境使用 Milvus，禁用 Chroma
+
+# =====================================================
+# 日志配置
+# =====================================================
 logging:
   level:
     root: WARN
     com.thirdexploration.promengine: INFO
+    com.thirdexploration.promengine.memory: INFO
   file:
     name: ${promengine.data-dir}/logs/promengine.log
+    max-size: 100MB
+    max-history: 30

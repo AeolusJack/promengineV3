@@ -42,7 +42,6 @@
     <module>promengine-model</module>
     <module>promengine-executor</module>
     <module>promengine-skill</module>
-    <module>promengine-evolution</module>
     <module>promengine-cognition</module>
     <module>promengine-swarm</module>
     <module>promengine-neuro</module>

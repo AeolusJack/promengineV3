@@ -1,20 +1,21 @@
 package com.thirdexploration.promengine.executor;
 
 import com.thirdexploration.promengine.core.domain.*;
-import com.thirdexploration.promengine.core.MemoryService;
 import com.thirdexploration.promengine.core.ModelGateway;
 import com.thirdexploration.promengine.executor.execution.ExecutionContext;
-
 import com.thirdexploration.promengine.executor.tool.registry.ToolRegistry;
-import com.thirdexploration.promengine.executor.util.LoggingUtils;
-import com.thirdexploration.promengine.memory.config.MemoryRetrievalPolicyProperties;
+import com.thirdexploration.promengine.memory.api.UnifiedMemoryAPI;
+import com.thirdexploration.promengine.memory.model.MemoryEntry;
+import com.thirdexploration.promengine.memory.model.MemoryQuery;
+import com.thirdexploration.promengine.prompt.core.PromptContext;
+import com.thirdexploration.promengine.prompt.core.PromptPipeline;
+import com.thirdexploration.promengine.prompt.util.PromptLoggingUtils;
 import com.thirdexploration.promengine.skill.SkillExecutor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -28,33 +29,21 @@ import java.util.stream.Stream;
 public class SimpleOrchestrator implements Orchestrator {
 
     private final ModelGateway modelGateway;
-    private final MemoryService memoryService;
+    private final UnifiedMemoryAPI memoryAPI;
     private final ToolRegistry toolRegistry;
     private final SkillExecutor skillExecutor;
-    private final MemoryRetrievalPolicyProperties policyProperties;
+    private final PromptPipeline promptPipeline;      // 统一管线
 
+    @Override
     public CompletableFuture<Response> execute(ExecutionContext ctx) {
+        // 1. 通过管线收集上下文并渲染 Prompt
+        TaskContext taskCtx = ctx.toTaskContext();
+        PromptContext context = promptPipeline.collect(taskCtx);
+        String prompt = promptPipeline.render(context);
+        prompt = promptPipeline.compress(prompt);
 
-
-        // 1. 检索相关记忆
-        Query query = Query.builder().text(ctx.getUserInput().getText()).userId(ctx.getUserId()).build();
-        RetrievalStrategy strategy = RetrievalStrategy.builder()
-                .timeWindow(java.time.Duration.ofDays(30))
-                .allowColdStorageScan(false)
-                .topK(5)
-                .build();
-        //切换复杂的融合
-      //  SearchResult memoryResult = memoryService.retrieve(query, strategy);
-        Pair<SearchResult, MemoryService.RetrievalDetails> retrievalPair = memoryService.retrieveWithDetails(query, strategy);
-        SearchResult memoryResult = retrievalPair.left();
-        MemoryService.RetrievalDetails details = retrievalPair.right();
-        // 日志打印各通路命中情况
-
-
-        // 2. 构建提示词
-        String prompt = buildPrompt(ctx, memoryResult);
-        //打印prompt提示词组装逻辑
-        LoggingUtils.debugMemoryFusion(details, prompt);
+        // 2. 打印日志（可选）
+        PromptLoggingUtils.debugPrompt("系统提示词", context.getMemories(), ctx.getUserInput().getText(), prompt);
 
         // 3. 调用模型
         CompletionRequest request = CompletionRequest.builder()
@@ -63,114 +52,73 @@ public class SimpleOrchestrator implements Orchestrator {
                 .maxTokens(2000)
                 .temperature(0.7f)
                 .build();
-      CompletionResult result = modelGateway.complete(request);
+        CompletionResult result = modelGateway.complete(request);
 
-        // 4. 存储本次交互为记忆
-        MemoryEntry entry = MemoryEntry.builder()
-                .userId(ctx.getUserId())
-                .content("用户: " + ctx.getUserInput().getText() + "\n助手: " + result.getContent())
-                .timestamp(Instant.now())
-                .type(MemoryEntry.MemoryType.EPISODIC)
-                .importance(0.5f)
-                .build();
-        memoryService.store(entry);
+        // 4. 存储对话记忆
+        storeConversationMemory(ctx, result.getContent());
 
-        Response response = Response.builder()
-                .text(result.getContent())
-                .processingTimeMs(result.getLatencyMs())
-                .modelUsed(request.getModelId())
-                .cost(0.0)
-                .build();
-
-        return CompletableFuture.completedFuture(response);
+        return CompletableFuture.completedFuture(
+                Response.builder()
+                        .text(result.getContent())
+                        .processingTimeMs(result.getLatencyMs())
+                        .modelUsed(request.getModelId())
+                        .cost(0.0)
+                        .build()
+        );
     }
 
-
-
-
+    @Override
     public Stream<CompletionChunk> executeStream(ExecutionContext ctx) {
-        // 同步检索记忆（若耗时较长可考虑异步预热，但为简单直接同步）
-        Query query = Query.builder().text(ctx.getUserInput().getText()).userId(ctx.getUserId()).build();
-        RetrievalStrategy strategy = RetrievalStrategy.builder()
-                .timeWindow(Duration.ofDays(30))
-                .topK(5)
-                .build();
-        Pair<SearchResult, MemoryService.RetrievalDetails> retrievalPair = memoryService.retrieveWithDetails(query, strategy);
-        SearchResult memoryResult = retrievalPair.left();
-        MemoryService.RetrievalDetails details = retrievalPair.right();
+        // 1. 通过管线收集上下文并渲染 Prompt
+        TaskContext taskCtx = ctx.toTaskContext();
+        PromptContext context = promptPipeline.collect(taskCtx);
+        String prompt = promptPipeline.render(context);
+        prompt = promptPipeline.compress(prompt);
 
-        String prompt = buildPrompt(ctx, memoryResult);
-        //打印prompt提示词组装逻辑
-        LoggingUtils.debugMemoryFusion(details, prompt);
+        // 2. 构建模型请求
         CompletionRequest request = CompletionRequest.builder()
                 .modelId("default")
                 .prompt(prompt)
                 .maxTokens(2000)
                 .temperature(0.7f)
                 .includeThinking(true)
-                .taskContext(null) //任务上下文暂无 todo 后续补上
+                .taskContext(null)
                 .build();
 
-        // 获取流
+        // 3. 获取流式响应
         Stream<CompletionChunk> chunkStream = modelGateway.stream(request);
 
-        // 收集完整回复以便存储
+        // 4. 收集完整回复并异步存储
         StringBuilder fullContent = new StringBuilder();
         return chunkStream.peek(chunk -> {
             if (!chunk.isLast()) {
                 fullContent.append(chunk.getDelta());
             } else {
-                // 流结束，异步存储记忆
                 CompletableFuture.runAsync(() -> {
-                    MemoryEntry entry = MemoryEntry.builder()
-                            .userId(ctx.getUserId())
-                            .content("用户: " + ctx.getUserInput().getText() + "\n助手: " + fullContent)
-                            .timestamp(Instant.now())
-                            .type(MemoryEntry.MemoryType.EPISODIC)
-                            .importance(0.5f)
-                            .metadata(Map.of("sessionId", ctx.getUserInput().getSessionId()))
-                            .build();
-                    memoryService.store(entry);
+                    storeConversationMemory(ctx, fullContent.toString());
                     log.debug("Stream completed, memory stored. Total length: {}", fullContent.length());
                 });
             }
         }).onClose(() -> log.debug("Chunk stream closed"));
     }
-    private String buildPrompt(ExecutionContext ctx, SearchResult memories) {
-        //二次控制，在融合后的记忆这里，再做一次限制
-        List<SearchResult.MemoryHit> hits = memories.getHits();
-        if (hits.isEmpty()) return "";
 
-        int maxTotal = policyProperties.getMaxMemoryChars();
-        int maxPer = policyProperties.getMaxPerMemoryChars();
-        log.debug("记忆融合后二次限制，实际传入融合后的数据条数{}，总最大长度限制：{}，单条最大长度限制{}",hits.size(),maxTotal,maxPer);
-        StringBuilder sb = new StringBuilder();
-        sb.append("你是一个有记忆的智能助手。\n");
-        sb.append("相关记忆：\n");
-
-        int currentLength = sb.length();
-        int addedCount = 0;
-
-        for (SearchResult.MemoryHit hit : hits) {
-            String content = hit.getContent();
-            if (content == null) continue;
-
-            // 单条截断
-            if (content.length() > maxPer) {
-                content = content.substring(0, maxPer - 3) + "...";
-            }
-
-            String line = "- " + content + "\n";
-            if (maxTotal > 0 && currentLength + line.length() > maxTotal) {
-                sb.append("... (共 ").append(hits.size()).append(" 条记忆，已展示前 ").append(addedCount).append(" 条)\n");
-                break;
-            }
-            sb.append(line);
-            currentLength += line.length();
-            addedCount++;
-        }
-        sb.append("用户: ").append(ctx.getUserInput().getText());
-        return sb.toString();
-
+    /**
+     * 存储对话记忆（统一逻辑）
+     */
+    private void storeConversationMemory(ExecutionContext ctx, String finalAnswer) {
+        MemoryEntry entry = MemoryEntry.builder()
+                .userId(ctx.getUserId())
+                .content("用户: " + ctx.getUserInput().getText() + "\n助手: " + finalAnswer)
+                .summary(finalAnswer.length() > 200 ? finalAnswer.substring(0, 200) : finalAnswer)
+                .timestamp(Instant.now())
+                .memoryType("EPISODIC")
+                .importance(0.5f)
+                .domain("general")
+                .layer("episodic")
+                .strength(1.0f)
+                .sharingLevel("private")
+                .metadata(Map.of("sessionId", ctx.getUserInput().getSessionId()))
+                .build();
+        memoryAPI.remember(entry);
     }
 }

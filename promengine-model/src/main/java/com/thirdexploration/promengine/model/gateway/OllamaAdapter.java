@@ -38,9 +38,9 @@ public class OllamaAdapter implements ModelAdapter {
     public OllamaAdapter() {
         this.objectMapper = new ObjectMapper();
         this.httpClient = new OkHttpClient.Builder()
-                .connectTimeout(Duration.ofSeconds(30))
+                .connectTimeout(Duration.ofSeconds(180))
                 .readTimeout(STREAM_READ_TIMEOUT)
-                .writeTimeout(Duration.ofSeconds(30))
+                .writeTimeout(Duration.ofSeconds(180))
                 .connectionPool(new ConnectionPool(5, 1, TimeUnit.MINUTES))
                 .retryOnConnectionFailure(true)
                 .build();

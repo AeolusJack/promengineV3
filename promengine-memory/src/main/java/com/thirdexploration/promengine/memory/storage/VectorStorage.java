@@ -34,4 +34,10 @@ public interface VectorStorage {
 
     record VectorRecord(String id, float[] vector, String metadata) {}
     record SearchHit(String id, float score) {}
+
+
+
+
+
+
 }

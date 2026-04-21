@@ -57,7 +57,9 @@ public class SandboxedToolExecutor implements ToolExecutor {
 
     @Override
     public List<ToolCallback> getAvailableTools() {
-        return toolRegistry.getAllToolCallbacks();
+        List<ToolCallback> callbacks = toolRegistry.getAllToolCallbacks();
+        log.info("SandboxedToolExecutor returning {} tools", callbacks.size());
+        return callbacks;
     }
 
     @Override
@@ -71,5 +73,10 @@ public class SandboxedToolExecutor implements ToolExecutor {
             });
         }
         return sb.toString();
+    }
+
+    @Override
+    public List<String> getAvailableToolNames() {
+        return toolRegistry.getAllToolCallbacks().stream().map(x -> x.getName()).toList();
     }
 }

@@ -72,6 +72,18 @@
             <artifactId>HikariCP</artifactId>
         </dependency>
 
+        <!-- Neo4j 图谱支持 -->
+        <dependency>
+            <groupId>org.neo4j.driver</groupId>
+            <artifactId>neo4j-java-driver</artifactId>
+            <version>5.26.0</version>
+        </dependency>
+        <!-- 遗传算法（用于 MemEvolve） -->
+        <dependency>
+            <groupId>io.jenetics</groupId>
+            <artifactId>jenetics</artifactId>
+            <version>7.2.0</version>
+        </dependency>
         <!-- Apache Arrow 与 Parquet（温存储） -->
         <dependency>
             <groupId>org.apache.arrow</groupId>

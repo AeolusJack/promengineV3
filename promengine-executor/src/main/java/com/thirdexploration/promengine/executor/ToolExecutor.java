@@ -21,4 +21,8 @@ public interface ToolExecutor {
      * 获取工具的自然语言描述，用于拼接到系统提示词中。
      */
     String getToolDescriptions();
+
+    List<String> getAvailableToolNames();
+
+
 }

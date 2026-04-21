@@ -1,25 +1,25 @@
 package com.thirdexploration.promengine.memory.storage;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
-import com.thirdexploration.promengine.memory.config.MemoryProperties;
+import com.thirdexploration.promengine.memory.config.AeonMemoryProperties;
 import com.thirdexploration.promengine.memory.exception.MemoryStorageException;
 import io.milvus.v2.client.ConnectConfig;
 import io.milvus.v2.client.MilvusClientV2;
-import io.milvus.v2.service.collection.request.*;
-import io.milvus.v2.service.index.request.CreateIndexReq;
-import io.milvus.v2.service.vector.request.*;
-import io.milvus.v2.service.vector.response.*;
 import io.milvus.v2.common.DataType;
 import io.milvus.v2.common.IndexParam;
-import io.milvus.v2.service.collection.request.CreateCollectionReq.CollectionSchema;
-import io.milvus.v2.service.collection.request.CreateCollectionReq.FieldSchema;
-import io.milvus.orm.iterator.QueryIterator;
+import io.milvus.v2.service.collection.request.*;
+import io.milvus.v2.service.index.request.CreateIndexReq;
+import io.milvus.v2.service.index.request.DropIndexReq;
+import io.milvus.v2.service.vector.request.DeleteReq;
+import io.milvus.v2.service.vector.request.InsertReq;
+import io.milvus.v2.service.vector.request.SearchReq;
 import io.milvus.v2.service.vector.request.data.FloatVec;
-import io.milvus.v2.service.vector.request.data.BaseVector;
+import io.milvus.v2.service.vector.response.SearchResp;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
@@ -31,31 +31,37 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 @Slf4j
 @Component
-@ConditionalOnProperty(name = "promengine.memory.vector.engine", havingValue = "milvus")
+@ConditionalOnProperty(name = "aeon.memory.vector.engine", havingValue = "milvus")
 @Primary
-@RequiredArgsConstructor
 public class MilvusVectorStorage implements VectorStorage {
 
-    private final MemoryProperties properties;
+    private final AeonMemoryProperties properties;
+    private final ObjectMapper objectMapper;
+    private final Gson gson = new Gson();
     private MilvusClientV2 client;
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
-    private static final String COLLECTION_NAME = "promengine_memories";
+    private static final String COLLECTION_NAME = "aeon_memories";
     private int dimension;
+
+    public MilvusVectorStorage(AeonMemoryProperties properties, ObjectMapper objectMapper) {
+        this.properties = properties;
+        this.objectMapper = objectMapper;
+    }
 
     @PostConstruct
     public void init() {
         try {
             Integer configDim = properties.getVector().getDimension();
             dimension = (configDim != null && configDim > 0) ? configDim : 768;
-            
-            // 1. 连接到 Milvus 服务
+
+            String host = properties.getVector().getMilvusHost();
+            int port = properties.getVector().getMilvusPort();
             ConnectConfig connectConfig = ConnectConfig.builder()
-                    .uri("http://" + properties.getMilvus().getHost() + ":" + properties.getMilvus().getPort())
+                    .uri("http://" + host + ":" + port)
                     .build();
             client = new MilvusClientV2(connectConfig);
 
-            // 2. 检查 Collection 是否存在，如果不存在则创建
             Boolean exists = client.hasCollection(HasCollectionReq.builder()
                     .collectionName(COLLECTION_NAME)
                     .build());
@@ -64,10 +70,9 @@ public class MilvusVectorStorage implements VectorStorage {
                 createCollection();
             } else {
                 log.info("Milvus collection '{}' already exists", COLLECTION_NAME);
-                // 确保 Collection 已加载到内存
                 loadCollection();
             }
-            
+
             log.info("Milvus vector storage initialized, dimension={}", dimension);
         } catch (Exception e) {
             log.error("Failed to initialize Milvus", e);
@@ -76,53 +81,51 @@ public class MilvusVectorStorage implements VectorStorage {
     }
 
     private void createCollection() {
-        // 1. 定义 Schema
-        FieldSchema idField = FieldSchema.builder()
+        // 定义 Schema
+        CreateCollectionReq.FieldSchema idField = CreateCollectionReq.FieldSchema.builder()
                 .name("id")
                 .dataType(DataType.VarChar)
                 .isPrimaryKey(true)
-                .maxLength(100)
+                .maxLength(128)
                 .build();
-                
-        FieldSchema vectorField = FieldSchema.builder()
+
+        CreateCollectionReq.FieldSchema vectorField = CreateCollectionReq.FieldSchema.builder()
                 .name("vector")
                 .dataType(DataType.FloatVector)
                 .dimension(dimension)
                 .build();
-                
-        FieldSchema metadataField = FieldSchema.builder()
+
+        CreateCollectionReq.FieldSchema metadataField = CreateCollectionReq.FieldSchema.builder()
                 .name("metadata")
                 .dataType(DataType.VarChar)
                 .maxLength(65535)
                 .build();
 
-        CollectionSchema schema = CollectionSchema.builder()
+        CreateCollectionReq.CollectionSchema schema = CreateCollectionReq.CollectionSchema.builder()
                 .fieldSchemaList(Arrays.asList(idField, vectorField, metadataField))
                 .build();
 
-        // 2. 创建 Collection
         CreateCollectionReq createReq = CreateCollectionReq.builder()
                 .collectionName(COLLECTION_NAME)
                 .collectionSchema(schema)
                 .build();
         client.createCollection(createReq);
-        
-        // 3. 创建索引 (Milvus 要求在加载 Collection 前必须为向量字段创建索引)
+
+        // 创建索引
         IndexParam indexParam = IndexParam.builder()
                 .fieldName("vector")
                 .indexType(IndexParam.IndexType.HNSW)
                 .metricType(IndexParam.MetricType.COSINE)
+                .extraParams(Map.of("M", 16, "efConstruction", 200))
                 .build();
-                
+
         CreateIndexReq createIndexReq = CreateIndexReq.builder()
                 .collectionName(COLLECTION_NAME)
                 .indexParams(Collections.singletonList(indexParam))
                 .build();
         client.createIndex(createIndexReq);
-        
-        // 4. 加载 Collection 到内存
+
         loadCollection();
-        
         log.info("Created Milvus collection '{}' with dimension {}", COLLECTION_NAME, dimension);
     }
 
@@ -141,24 +144,14 @@ public class MilvusVectorStorage implements VectorStorage {
         log.info("Milvus vector storage shut down");
     }
 
-    private final Gson gson = new Gson(); // 创建 Gson 实例用于对象转换
-
     @Override
     public void add(String id, float[] vector, String metadataJson) {
         lock.writeLock().lock();
         try {
-            // 1. 将向量和元数据构造成一个 JsonObject
-            JsonObject data = new JsonObject();
-            data.addProperty("id", id);
-            data.add("vector", gson.toJsonTree(convertToFloatList(vector))); // 转换为List<Float>
-            data.addProperty("metadata", metadataJson);
-
-            // 2. 构建插入请求，data() 方法接受一个 List<JsonObject>
             InsertReq insertReq = InsertReq.builder()
                     .collectionName(COLLECTION_NAME)
-                    .data(Collections.singletonList(data)) // 关键修改点：使用 JSONObject 列表
+                    .data(Collections.singletonList(buildJsonObject(id, vector, metadataJson)))
                     .build();
-
             client.insert(insertReq);
             log.debug("Added vector for id={}", id);
         } catch (Exception e) {
@@ -176,19 +169,12 @@ public class MilvusVectorStorage implements VectorStorage {
         try {
             List<JsonObject> dataList = new ArrayList<>();
             for (VectorRecord rec : records) {
-                JsonObject data = new JsonObject();
-                data.addProperty("id", rec.id());
-                data.add("vector", gson.toJsonTree(convertToFloatList(rec.vector())));
-                data.addProperty("metadata", rec.metadata());
-                dataList.add(data);
+                dataList.add(buildJsonObject(rec.id(), rec.vector(), rec.metadata()));
             }
-
-            // 构建批量插入请求
             InsertReq insertReq = InsertReq.builder()
                     .collectionName(COLLECTION_NAME)
-                    .data(dataList) // 直接传入 JSONObject 列表
+                    .data(dataList)
                     .build();
-
             client.insert(insertReq);
             log.info("Batch added {} vectors", records.size());
         } catch (Exception e) {
@@ -199,7 +185,17 @@ public class MilvusVectorStorage implements VectorStorage {
         }
     }
 
-    // 工具方法：将 float[] 转换为 List<Float>
+    /**
+     * 构建符合 Milvus SDK 要求的 JsonObject。
+     */
+    private JsonObject buildJsonObject(String id, float[] vector, String metadata) {
+        JsonObject json = new JsonObject();
+        json.addProperty("id", id);
+        json.add("vector", gson.toJsonTree(convertToFloatList(vector)));
+        json.addProperty("metadata", metadata);
+        return json;
+    }
+
     private List<Float> convertToFloatList(float[] array) {
         List<Float> list = new ArrayList<>(array.length);
         for (float v : array) {
@@ -212,9 +208,7 @@ public class MilvusVectorStorage implements VectorStorage {
     public List<SearchHit> search(float[] queryVector, int topK) {
         lock.readLock().lock();
         try {
-            // 1. 构建搜索参数
-            Map<String, Object> searchParams = new HashMap<>();
-            searchParams.put("ef", 100);
+            Map<String, Object> searchParams = Map.of("ef", 100);
 
             SearchReq searchReq = SearchReq.builder()
                     .collectionName(COLLECTION_NAME)
@@ -224,20 +218,14 @@ public class MilvusVectorStorage implements VectorStorage {
                     .searchParams(searchParams)
                     .build();
 
-            // 2. 执行搜索
             SearchResp searchResp = client.search(searchReq);
 
-            // 3. 处理结果
             List<SearchHit> hits = new ArrayList<>();
             List<List<SearchResp.SearchResult>> allSearchResults = searchResp.getSearchResults();
 
             if (allSearchResults != null && !allSearchResults.isEmpty()) {
-                List<SearchResp.SearchResult> resultsForSingleQuery = allSearchResults.get(0);
-                for (SearchResp.SearchResult result : resultsForSingleQuery) {
-                    // 修正点：尝试通过 getEntity() 获取字段 Map
-                    // 如果 getEntity() 不可用，直接使用 getId() 和 getScore() 方法
-                    Map<String, Object> fields = result.getEntity();
-                    String id = (String) fields.get("id");
+                for (SearchResp.SearchResult result : allSearchResults.get(0)) {
+                    String id = (String) result.getId();
                     float score = result.getScore();
                     hits.add(new SearchHit(id, score));
                 }
@@ -250,6 +238,7 @@ public class MilvusVectorStorage implements VectorStorage {
             lock.readLock().unlock();
         }
     }
+
     @Override
     public void delete(String id) {
         lock.writeLock().lock();
@@ -272,11 +261,19 @@ public class MilvusVectorStorage implements VectorStorage {
     public void rebuildIndex() {
         lock.writeLock().lock();
         try {
+            DropIndexReq dropIndexReq = DropIndexReq.builder()
+                    .collectionName(COLLECTION_NAME)
+                    .fieldName("vector")
+                    .build();
+            client.dropIndex(dropIndexReq);
+
             IndexParam indexParam = IndexParam.builder()
                     .fieldName("vector")
                     .indexType(IndexParam.IndexType.HNSW)
                     .metricType(IndexParam.MetricType.COSINE)
+                    .extraParams(Map.of("M", 16, "efConstruction", 200))
                     .build();
+
             CreateIndexReq createIndexReq = CreateIndexReq.builder()
                     .collectionName(COLLECTION_NAME)
                     .indexParams(Collections.singletonList(indexParam))

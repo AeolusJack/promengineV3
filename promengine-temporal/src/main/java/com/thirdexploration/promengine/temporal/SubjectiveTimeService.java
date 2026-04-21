@@ -1,6 +1,6 @@
 package com.thirdexploration.promengine.temporal;
 
-import com.thirdexploration.promengine.core.domain.MemoryEntry;
+import com.thirdexploration.promengine.memory.model.MemoryEntry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 

@@ -29,4 +29,9 @@ public interface PromptManager {
         String getComment();
         boolean isAccepted();
     }
+
+    /** 新增：压缩提示词 */
+    String compress(String prompt);
+
+
 }

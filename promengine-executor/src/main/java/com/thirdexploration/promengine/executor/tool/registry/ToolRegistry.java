@@ -13,27 +13,76 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Component
 public class ToolRegistry implements ToolInfoProvider {
 
-    // 工具名称 -> 版本列表 (使用字符串版本排序，可自定义比较器)
     private final Map<String, SortedMap<String, RegisteredTool>> tools = new ConcurrentHashMap<>();
-
     private final Cache<String, GrayscaleConfig> grayscaleCache = Caffeine.newBuilder()
             .expireAfterWrite(10, TimeUnit.MINUTES)
             .build();
-
     private final Map<String, ToolStats> statsMap = new ConcurrentHashMap<>();
 
+    // 缓存列表，使用读写锁保护
+    private volatile List<ToolCallback> cachedCallbacks;
+    private final ReadWriteLock cacheLock = new ReentrantReadWriteLock();
+
+
+    public List<ToolCallback> getAllToolCallbacks() {
+        // 先尝试读锁获取缓存
+        cacheLock.readLock().lock();
+        try {
+            if (cachedCallbacks != null) {
+                return cachedCallbacks;
+            }
+        } finally {
+            cacheLock.readLock().unlock();
+        }
+
+        // 缓存为空，加写锁重建
+        cacheLock.writeLock().lock();
+        try {
+            if (cachedCallbacks == null) { // 双重检查
+                refreshCachedCallbacks();
+            }
+            return cachedCallbacks;
+        } finally {
+            cacheLock.writeLock().unlock();
+        }
+    }
+
+    private void refreshCachedCallbacks() {
+        List<ToolCallback> callbacks = new ArrayList<>();
+        for (String name : tools.keySet()) {
+            // resolve 已保证每个名称只返回当前激活版本
+            resolve(name, null).ifPresent(tool -> callbacks.add(tool.toToolCallback()));
+        }
+        this.cachedCallbacks = Collections.unmodifiableList(callbacks);
+        log.info("Refreshed tool callbacks cache, total: {}", callbacks.size());
+    }
+
     public void register(ToolDefinition definition, ToolInvoker invoker) {
+        String name = definition.getName();
         String version = definition.getVersion();
-        RegisteredTool tool = new RegisteredTool(definition, invoker);
-        tools.computeIfAbsent(definition.getName(), k -> new TreeMap<>())
-                .put(version, tool);
-        statsMap.putIfAbsent(definition.getName(), new ToolStats());
-        log.debug("Registered tool: {} version {}", definition.getName(), version);
+        cacheLock.writeLock().lock();
+        try {
+            SortedMap<String, RegisteredTool> versions = tools.computeIfAbsent(name, k -> new TreeMap<>());
+            if (versions.containsKey(version)) {
+                log.warn("Tool '{}' version '{}' already registered, skipping", name, version);
+                return;
+            }
+            versions.put(version, new RegisteredTool(definition, invoker));
+            statsMap.putIfAbsent(name, new ToolStats());
+            // 清空缓存，下次调用时重建
+            this.cachedCallbacks = null;
+        } finally {
+            cacheLock.writeLock().unlock();
+        }
+        log.debug("Registered tool: {} version {}", name, version);
     }
 
     public Optional<RegisteredTool> resolve(String toolName, String requestedVersion) {
@@ -65,25 +114,16 @@ public class ToolRegistry implements ToolInfoProvider {
         statsMap.get(toolName).incrementCall(latestVersion);
         return Optional.of(latest);
     }
+
     public Set<String> getRegisteredToolNames() {
         return tools.keySet();
-    }
-    public List<ToolCallback> getAllToolCallbacks() {
-        List<ToolCallback> callbacks = new ArrayList<>();
-        for (String name : tools.keySet()) {
-            resolve(name, null).ifPresent(tool -> {
-                callbacks.add(tool.toToolCallback());
-                log.debug("Adding tool callback: {}", tool.definition().getName());
-            });
-        }
-        log.info("Total tool callbacks prepared: {}", callbacks.size());
-        return callbacks;
     }
 
     private GrayscaleConfig loadGrayscaleConfig(String toolName) {
         return null;
     }
 
+    // ---------- ToolInfoProvider 实现 ----------
     @Override
     public List<ToolInfo> getAvailableTools() {
         return getAllToolCallbacks().stream()
@@ -91,6 +131,21 @@ public class ToolRegistry implements ToolInfoProvider {
                 .toList();
     }
 
+    @Override
+    public List<String> getAvailableToolNames() {
+        return getAllToolCallbacks().stream()
+                .map(ToolCallback::getName)
+                .toList();
+    }
+
+    @Override
+    public String getToolDescriptions() {
+        return getAllToolCallbacks().stream()
+                .map(tc -> "- " + tc.getName() + ": " + tc.getDescription())
+                .collect(Collectors.joining("\n"));
+    }
+
+    // ---------- 内部类 ----------
     @Data
     public static class GrayscaleConfig {
         private boolean enabled;
@@ -111,7 +166,6 @@ public class ToolRegistry implements ToolInfoProvider {
     }
 
     public record RegisteredTool(ToolDefinition definition, ToolInvoker invoker) {
-        // 替换原先的 toToolCallback 方法
         public ToolCallback toToolCallback() {
             return new ToolCallback() {
                 @Override
@@ -126,11 +180,10 @@ public class ToolRegistry implements ToolInfoProvider {
 
                 @Override
                 public org.springframework.ai.tool.definition.ToolDefinition getToolDefinition() {
-                    // 将我们的 ToolDefinition 转换为 Spring AI 需要的 ToolDefinition
                     return org.springframework.ai.tool.definition.ToolDefinition.builder()
                             .name(definition.getName())
                             .description(definition.getDescription())
-                            .inputSchema(definition.toJsonSchema())   // 需要在 ToolDefinition 中实现 toJsonSchema()
+                            .inputSchema(definition.toJsonSchema())
                             .build();
                 }
 
@@ -151,7 +204,6 @@ public class ToolRegistry implements ToolInfoProvider {
 
                 @Override
                 public String call(String toolInput, ToolContext toolContext) {
-                    // M7 默认实现会调用 call(String)，直接委托即可
                     return call(toolInput);
                 }
             };

@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 @Component
@@ -21,15 +22,31 @@ public class ToolAutoRegistrar {
 
     private final ToolRegistry toolRegistry;
     private final ApplicationContext applicationContext;
+    private final AtomicBoolean registered = new AtomicBoolean(false);
 
     @PostConstruct
     public void scanAndRegister() {
+        if (!registered.compareAndSet(false, true)) {
+            log.info("Tool auto-registration already performed, skipping.");
+            return;
+        }
+        log.info("Starting tool auto-registration...");
         Map<String, Object> beans = applicationContext.getBeansWithAnnotation(ToolHandler.class);
+        log.info("Found {} beans with @ToolHandler annotation", beans.size());
+
         for (Map.Entry<String, Object> entry : beans.entrySet()) {
             Object bean = entry.getValue();
             Class<?> beanClass = bean.getClass();
             ToolHandler annotation = AnnotationUtils.findAnnotation(beanClass, ToolHandler.class);
             if (annotation == null) continue;
+
+            String toolName = annotation.name();
+            // 二次确认，防止并发或重复扫描
+            if (toolRegistry.getRegisteredToolNames().contains(toolName)) {
+                log.warn("Tool '{}' already registered, skipping duplicate registration from bean: {}",
+                        toolName, entry.getKey());
+                continue;
+            }
 
             Method executeMethod = findExecuteMethod(beanClass);
             List<ToolDefinition.ParameterDef> paramDefs = extractParameters(executeMethod);
@@ -38,7 +55,7 @@ public class ToolAutoRegistrar {
             );
 
             ToolDefinition definition = ToolDefinition.builder()
-                    .name(annotation.name())
+                    .name(toolName)
                     .description(annotation.description())
                     .version(annotation.version())
                     .category(annotation.category())
@@ -55,8 +72,9 @@ public class ToolAutoRegistrar {
 
             toolRegistry.register(definition, invoker);
             log.info("Auto-registered tool: {} v{} (category: {}, location: {})",
-                    annotation.name(), annotation.version(), annotation.category(), annotation.location());
+                    toolName, annotation.version(), annotation.category(), annotation.location());
         }
+        log.info("Tool auto-registration completed. Total tools: {}", toolRegistry.getRegisteredToolNames().size());
     }
 
     private Method findExecuteMethod(Class<?> clazz) {

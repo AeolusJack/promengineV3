@@ -1,6 +1,7 @@
 package com.thirdexploration.promengine.prompt;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.thirdexploration.promengine.prompt.config.PromptProperties;
 import com.thirdexploration.promengine.prompt.model.PromptTemplate;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;

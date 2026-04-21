@@ -30,11 +30,13 @@ public class ChatController {
     private final AgentRuntime agentRuntime;
 
     @PostMapping
-    public CompletableFuture<Response> chat(@RequestBody ChatRequest request) {
+    public CompletableFuture<Response> chat(@RequestBody ChatRequest request, @RequestHeader(value = "X-User-Id",required = false) String userId) {
         UserInput input = UserInput.builder()
                 .sessionId(request.sessionId())    // ✅ 修正：record 使用字段名作为访问器
                 .text(request.message())           // ✅ 修正：record 使用字段名作为访问器
                 .timestamp(System.currentTimeMillis())
+                .userId(userId)                         // 从请求头获取
+                .domain(null)            // 可选，从请求体获取
                 .build();
         return agentRuntime.process(input);
     }
@@ -135,5 +137,9 @@ public class ChatController {
     }
 
 
-    public record ChatRequest(String sessionId, String message) {}
+    public record ChatRequest(String sessionId, String message) {
+
+
+
+    }
 }

@@ -5,17 +5,20 @@ import com.zaxxer.hikari.HikariDataSource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.io.ClassPathResource;
+import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.init.DataSourceInitializer;
-import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import javax.sql.DataSource;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
 /**
- * 记忆模块 Spring 配置。
+ * Aeon 记忆模块数据源配置。
+ * 仅保留统一的 memoryDataSource，移除旧热存储数据源。
  */
 @Configuration
 public class MemoryConfiguration {
@@ -23,33 +26,36 @@ public class MemoryConfiguration {
     @Value("${promengine.data-dir:./data}")
     private String dataDir;
 
+    /**
+     * Aeon 统一数据源（SQLite）。
+     */
     @Bean
-    public DataSource hotDataSource() {
+    @Primary
+    public DataSource memoryDataSource() {
         HikariConfig config = new HikariConfig();
-        Path dbPath = Paths.get(dataDir, "memory", "hot.db");
-        dbPath.getParent().toFile().mkdirs();
-        config.setJdbcUrl("jdbc:sqlite:" + dbPath.toAbsolutePath());
+        Path dbPath = Paths.get(dataDir, "memory", "aeon_memory.db").toAbsolutePath();
+        try {
+            Files.createDirectories(dbPath.getParent());
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to create database directory: " + dbPath.getParent(), e);
+        }
+        config.setJdbcUrl("jdbc:sqlite:" + dbPath);
         config.setDriverClassName("org.sqlite.JDBC");
-        config.setMaximumPoolSize(5);
-        config.setMinimumIdle(1);
+        config.setMaximumPoolSize(10);
+        config.setMinimumIdle(2);
         config.setConnectionTimeout(30000);
         config.setIdleTimeout(600000);
-        config.setPoolName("HotStoragePool");
+        config.setPoolName("AeonMemoryPool");
         return new HikariDataSource(config);
     }
 
     @Bean
-    public JdbcTemplate hotJdbcTemplate(DataSource hotDataSource) {
-        return new JdbcTemplate(hotDataSource);
+    public JdbcTemplate memoryJdbcTemplate(DataSource memoryDataSource) {
+        return new JdbcTemplate(memoryDataSource);
     }
 
     @Bean
-    public DataSourceInitializer hotStorageInitializer(DataSource hotDataSource) {
-        DataSourceInitializer initializer = new DataSourceInitializer();
-        initializer.setDataSource(hotDataSource);
-        ResourceDatabasePopulator populator = new ResourceDatabasePopulator();
-        populator.addScript(new ClassPathResource("schema-hot.sql"));
-        initializer.setDatabasePopulator(populator);
-        return initializer;
+    public PlatformTransactionManager transactionManager(DataSource memoryDataSource) {
+        return new DataSourceTransactionManager(memoryDataSource);
     }
 }

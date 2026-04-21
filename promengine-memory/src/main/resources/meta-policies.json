@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "domains": [
+    {"name": "general", "description": "通用记忆域", "default": true},
+    {"name": "code", "description": "代码记忆域", "default": false},
+    {"name": "legal", "description": "法律文书域", "default": false}
+  ],
+  "layers": [
+    {"name": "working", "description": "工作记忆", "ttl": "30m", "maxCapacity": 4096, "forgettingRate": 0.0},
+    {"name": "episodic", "description": "情景记忆", "ttl": "7d", "maxCapacity": 10000, "forgettingRate": 0.1},
+    {"name": "semantic", "description": "语义记忆", "ttl": null, "maxCapacity": 100000, "forgettingRate": 0.05},
+    {"name": "procedural", "description": "过程记忆", "ttl": null, "maxCapacity": 10000, "forgettingRate": 0.0,"reliabilityThreshold": 0.7},
+    {"name": "collective", "description": "集体记忆", "ttl": null, "maxCapacity": 50000, "forgettingRate": 0.0}
+  ],
+  "sharingLevels": [
+    {"name": "private", "description": "仅创建者"},
+    {"name": "domain", "description": "同域共享"},
+    {"name": "global", "description": "全局共享"}
+  ]
+}

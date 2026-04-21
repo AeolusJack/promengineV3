@@ -32,6 +32,8 @@ public class ExecutionContext {
     /** 用户标识 */
     private final String userId;
 
+
+
     /** 用户原始输入 */
     private final UserInput userInput;
 
@@ -193,7 +195,8 @@ public class ExecutionContext {
 
     private static String extractUserId(UserInput userInput) {
         // 简化实现，实际可从 UserInput 的元数据或 SecurityContext 获取
-        return "default-user";
+        //return "default-user";
+         return userInput.getUserId();
     }
 
     /**
