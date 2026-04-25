@@ -56,7 +56,7 @@ aeon:
       milvus-port: 19530
       collection-name: aeon_memories
     graph:
-      enabled: false
+      enabled: true
       uri: bolt://localhost:7687
       username: neo4j
       password: neo4j

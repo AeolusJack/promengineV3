@@ -60,7 +60,10 @@
             <artifactId>promengine-core</artifactId>
             <version>${project.version}</version>
         </dependency>
-
+        <dependency>
+            <groupId>com.thirdexploration</groupId>
+            <artifactId>promengine-neuro</artifactId>
+            <version>${project.version}</version>        </dependency>
         <!-- Spring Boot 基础依赖 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

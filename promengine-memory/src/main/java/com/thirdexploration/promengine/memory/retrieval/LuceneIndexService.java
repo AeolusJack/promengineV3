@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.*;
 import org.apache.lucene.index.*;
+import org.apache.lucene.queryparser.classic.ParseException;
 import org.apache.lucene.queryparser.classic.QueryParser;
 import org.apache.lucene.search.*;
 import org.apache.lucene.store.FSDirectory;
@@ -100,15 +101,16 @@ public class LuceneIndexService {
     private List<String> search(FSDirectory dir, String queryText, int limit) {
         List<String> ids = new ArrayList<>();
         try {
-            // 检查索引是否存在（是否有 segments 文件）
             if (!DirectoryReader.indexExists(dir)) {
                 log.debug("Lucene index does not exist at {}, returning empty results", dir);
                 return ids;
             }
             try (IndexReader reader = DirectoryReader.open(dir)) {
                 IndexSearcher searcher = new IndexSearcher(reader);
+                // 关键修复：对查询文本进行转义，避免特殊字符导致解析错误
+                String escapedQuery = QueryParser.escape(queryText);
                 QueryParser parser = new QueryParser("content", analyzer);
-                Query query = parser.parse(queryText);
+                Query query = parser.parse(escapedQuery);
                 TopDocs topDocs = searcher.search(query, limit);
                 for (ScoreDoc sd : topDocs.scoreDocs) {
                     Document doc = searcher.storedFields().document(sd.doc);
@@ -117,6 +119,8 @@ public class LuceneIndexService {
             }
         } catch (IndexNotFoundException e) {
             log.debug("Lucene index not found at {}", dir);
+        } catch (ParseException e) {
+            log.warn("Lucene query parse failed for '{}': {}", queryText, e.getMessage());
         } catch (Exception e) {
             log.warn("Lucene search failed: {}", e.getMessage());
         }

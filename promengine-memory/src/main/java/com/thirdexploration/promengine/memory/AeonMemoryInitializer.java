@@ -182,7 +182,23 @@ public class AeonMemoryInitializer {
                 """,
                 "CREATE INDEX IF NOT EXISTS idx_audit_memory ON memory_audit_log(memory_id)",
                 "CREATE INDEX IF NOT EXISTS idx_audit_operator ON memory_audit_log(operator_id)",
-                "CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON memory_audit_log(timestamp DESC)"
+                "CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON memory_audit_log(timestamp DESC)",
+
+                // ========== 7. 聊天消息表 ==========
+                """
+                  CREATE TABLE IF NOT EXISTS chat_messages (
+                      id TEXT PRIMARY KEY,
+                      user_id TEXT NOT NULL,
+                      session_id TEXT NOT NULL,
+                      session_name TEXT,
+                      role TEXT NOT NULL,
+                      content TEXT NOT NULL,
+                      timestamp INTEGER NOT NULL,
+                      created_at INTEGER NOT NULL
+                  )
+                  """,
+                        "CREATE INDEX IF NOT EXISTS idx_chat_user_session ON chat_messages(user_id, session_id, timestamp)"
+
         );
 
         for (String sql : sqlStatements) {

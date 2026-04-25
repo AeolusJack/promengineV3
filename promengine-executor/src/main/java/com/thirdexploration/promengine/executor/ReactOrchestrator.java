@@ -154,7 +154,7 @@ public class ReactOrchestrator implements Orchestrator {
                         .messages(conversation)
                         .tools(tools)
                         .options(ToolCallingChatOptions.builder()
-                                .internalToolExecutionEnabled(true) // 禁用内部自动工具执行,测试时可以关掉
+                                .internalToolExecutionEnabled(false) // 禁用内部自动工具执行,promengine的R-CCAM 模式需要禁用spring ai的 react实现
                                 .build())
                         .call()
                         .chatResponse();

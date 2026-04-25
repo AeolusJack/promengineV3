@@ -3,6 +3,7 @@ package com.thirdexploration.promengine.memory.storage;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.thirdexploration.promengine.memory.config.MemoryMetadataRegistry;
+import com.thirdexploration.promengine.memory.model.MemoryEntry;
 import com.thirdexploration.promengine.memory.model.MemoryRecord;
 import com.thirdexploration.promengine.memory.model.Provenance;
 import lombok.RequiredArgsConstructor;
@@ -70,6 +71,56 @@ public class EpisodicMemoryService {
     private static final String COUNT_ALL = "SELECT COUNT(*) FROM episodic_memory WHERE deleted = 0";
     private static final String COUNT_BY_USER = "SELECT COUNT(*) FROM episodic_memory WHERE user_id = ? AND deleted = 0";
     private static final String COUNT_BY_SESSION = "SELECT COUNT(*) FROM episodic_memory WHERE session_id = ? AND deleted = 0";
+
+
+
+    /**
+     * 分页关键词查询（用于前端记忆列表展示）
+     */
+    public record PageResult<T>(List<T> data, long total) {}
+
+    public PageResult<MemoryEntry> findByKeywordAndPage(String keyword, int page, int size) {
+        StringBuilder countSql = new StringBuilder("SELECT COUNT(*) FROM episodic_memory WHERE deleted = 0 ");
+        StringBuilder dataSql = new StringBuilder("SELECT * FROM episodic_memory WHERE deleted = 0 ");
+
+        List<Object> params = new ArrayList<>();
+
+        if (keyword != null && !keyword.isBlank()) {
+            String like = "%" + keyword + "%";
+            String where = " AND (content LIKE ? OR summary LIKE ?) ";
+            countSql.append(where);
+            dataSql.append(where);
+            params.add(like);
+            params.add(like);
+        }
+
+        long total = jdbcTemplate.queryForObject(countSql.toString(), Long.class, params.toArray());
+
+        dataSql.append(" ORDER BY timestamp DESC LIMIT ? OFFSET ?");
+        int offset = (page - 1) * size;
+        params.add(size);
+        params.add(offset);
+
+        List<MemoryRecord> data = jdbcTemplate.query(dataSql.toString(), new EpisodicRowMapper(objectMapper), params.toArray());
+        List<MemoryEntry> list = data.stream().map(x -> {
+            MemoryEntry build = MemoryEntry.builder()
+                    .memoryType(x.getMemoryType())
+                    .layer(x.getLayer())
+                    .id(x.getId())
+                    .domain(x.getDomain())
+                    .userId(x.getUserId())
+                    .sharingLevel(x.getSharingLevel())
+                    .content(x.getContent())
+                    .metadata(x.getMetadata())
+                    .summary(x.getSummary()).build();
+            return build;
+
+        }).toList();
+        return new PageResult<>(list, total);
+    }
+
+
+
 
     @Transactional
     public void store(MemoryRecord record) {
