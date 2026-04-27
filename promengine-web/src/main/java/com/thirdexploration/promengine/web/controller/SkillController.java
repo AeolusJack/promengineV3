@@ -1,7 +1,7 @@
 package com.thirdexploration.promengine.web.controller;
 
 import com.thirdexploration.promengine.web.dto.ApiResponse;
-import com.thirdexploration.promengine.web.service.SkillService;
+import com.thirdexploration.promengine.skill.service.SkillService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 

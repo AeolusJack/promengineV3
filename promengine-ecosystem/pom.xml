@@ -20,8 +20,6 @@
         <module>promengine-adapter-openclaw</module>
         <module>promengine-adapter-browseruse</module>
         <module>promengine-adapter-feishu</module>
-<!--        <module>promengine-adapter-weixin</module>-->
-<!--        <module>promengine-adapter-wps</module>-->
     </modules>
 
     <dependencyManagement>

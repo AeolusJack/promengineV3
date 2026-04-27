@@ -1,6 +1,6 @@
-package com.thirdexploration.promengine.web.repository;
+package com.thirdexploration.promengine.skill.repository;
 
-import com.thirdexploration.promengine.web.model.SkillRecord;
+import com.thirdexploration.promengine.skill.model.SkillRecord;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -8,7 +8,6 @@ import org.springframework.stereotype.Repository;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
-import java.util.UUID;
 
 @Repository
 public class SkillRepository {

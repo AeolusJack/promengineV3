@@ -1,7 +1,7 @@
-package com.thirdexploration.promengine.web.service;
+package com.thirdexploration.promengine.skill.service;
 
-import com.thirdexploration.promengine.web.model.SkillRecord;
-import com.thirdexploration.promengine.web.repository.SkillRepository;
+import com.thirdexploration.promengine.skill.model.SkillRecord;
+import com.thirdexploration.promengine.skill.repository.SkillRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
