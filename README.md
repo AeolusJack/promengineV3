@@ -193,6 +193,9 @@ npm run dev
 ---
 
 ## 📸 前端页面展示
+
+<img width="1864" height="1234" alt="ezgif-498edafded01723f" src="https://github.com/user-attachments/assets/fa40500f-4a25-4a8d-81fb-3cb2bac2cc1d" />
+
 - 对话界面：左侧对话区，右侧可折叠历史会话列表，底部输入框和思维涟漪。
 - 记忆管理：五层记忆浏览、详情抽屉、质量工坊。
 - Agent 管理：Agent 列表、群聊界面、配置抽屉。
