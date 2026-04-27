@@ -232,6 +232,47 @@ This project is open-sourced under the **Apache License 2.0**.
 *   **Spring AI**: [https://spring.io/projects/spring-ai](https://spring.io/projects/spring-ai)
 
 ---
+## 🤝 How to Contribute
+
+PromEngine is an open and inclusive open-source project, and we wholeheartedly welcome contributions of any kind! Whether you are an experienced developer or just starting out with AI agents, your participation helps this "digital companion" grow smarter and more capable.
+
+### Getting Started
+
+1. **Fork the Repository**: Click the `Fork` button in the upper-right corner of the page to copy the repository to your own GitHub account.
+2. **Clone Locally**: `git clone https://github.com/your-username/promengineV3.git`
+3. **Create a Feature Branch**: `git checkout -b feat/your-feature-description`. We recommend using branch name prefixes such as `feat/` (new feature), `fix/` (bug fix), or `docs/` (documentation).
+4. **Start Developing**: Add or modify code according to the project structure. Please ensure your code follows the existing code style and add necessary unit tests for core logic.
+5. **Commit Your Changes**: Use clear and concise commit messages. We recommend following the [Conventional Commits](https://www.conventionalcommits.org/) specification.
+6. **Open a Pull Request (PR)**: After pushing your branch to GitHub, open a PR against the original repository. Please describe in detail what changes you made, what problem you solved, or what feature you implemented in the PR description.
+7. **Code Review**: The project maintainers will review your PR and may suggest some modifications. Please follow up patiently until your PR is merged.
+
+### Contribution Areas
+
+You can contribute your talents in the following areas:
+
+*   **🛠️ Develop New Tools**: Create new tools (such as browser automation, data analysis, API calls, etc.) using the `@ToolHandler` annotation to extend the Agent's capabilities.
+*   **🧠 Enhance the Memory System**: Optimize retrieval algorithms, forgetting curve strategies, or knowledge distillation logic within the five-tier memory system.
+*   **🔌 Adapt New Models / Platforms**: Add new model providers to the ModelGateway, or add new platform adapters (e.g., DingTalk, Discord) to the ecosystem.
+*   **🐛 Fix Bugs**: Find bugs you're interested in on the [Issues](https://github.com/AeolusJack/promengineV3/issues) page and fix them.
+*   **📝 Improve Documentation**: Improve or translate the project documentation to help more people get started easily.
+*   **🎨 Optimize Frontend Experience**: Refine the UI/UX design of Xuanji Tai (璇玑台) to make it more visually appealing and user-friendly.
+*   **🧪 Write Tests**: Add unit tests and integration tests for existing features to improve the project's robustness.
+
+### Development Guide
+
+*   **Backend Development**: Please ensure you have JDK 21 and Maven 3.8+ installed locally. After importing the project, it is recommended to first read through the interface definitions in the `promengine-core` module to understand the responsibilities of each module.
+*   **Frontend Development**: Navigate to the `promengineV3-vue` directory and run `npm install && npm run dev` to start the development server. The frontend uses Vue 3 + TypeScript, with an interface style that follows a minimalist blue-white-gray aesthetic.
+*   **Extending the Memory System**: If you wish to add new memory layers or domains, please read the relevant documentation for `MemoryMetadataRegistry` and `AeonMemoryProperties` within the `promengine-memory` module.
+*   **Code Standards**: Please ensure your code follows the project's existing coding style and includes clear Javadoc or TypeScript comments for public APIs.
+
+### Community and Contact
+
+*   **GitHub Issues**: [https://github.com/AeolusJack/promengine/issues](https://github.com/AeolusJack/promengineV3/issues) (Submit bugs and feature suggestions)
+*   **GitHub Discussions**: [https://github.com/AeolusJack/promengine/discussions](https://github.com/AeolusJack/promengineV3/discussions) (Technical discussions and Q&A)
+*   **Email**: `pengjingqing125@gmail.com` (Author's email for non-public communication)
+
+Whether you fix a typo or implement a complex MCP service, your name will appear in the contributors' list. PromEngine evolves with you—we look forward to your Pull Request!
+
 
 **PromEngine — Your Digital Companion, Evolving with You.**
 
@@ -480,5 +521,46 @@ npm run dev
 - **Spring AI**：[https://spring.io/projects/spring-ai](https://spring.io/projects/spring-ai)
 
 ---
+
+## 🤝 参与贡献 (How to Contribute)
+
+PromEngine 是一个开放、包容的开源项目，我们由衷欢迎任何形式的贡献！无论你是经验丰富的开发者，还是刚刚接触 AI Agent 的新手，你的每一次参与都让这个“数字伙伴”变得更加聪明和强大。
+
+### 如何开始？
+
+1. **Fork 本仓库**：点击页面右上角的 `Fork` 按钮，将代码仓库复制到你自己的 GitHub 账户下。
+2. **克隆到本地**：`git clone https://github.com/你的用户名/promengineV3.git`
+3. **创建特性分支**：`git checkout -b feat/你的功能描述`。分支命名建议使用 `feat/`（新功能）、`fix/`（修复）、`docs/`（文档）等前缀。
+4. **进行开发**：按照项目结构添加或修改代码。请确保你的代码符合现有的代码风格，并为核心逻辑添加必要的单元测试。
+5. **提交变更**：使用清晰、简洁的提交信息。我们推荐遵循 [Conventional Commits](https://www.conventionalcommits.org/) 规范。
+6. **发起 Pull Request (PR)**：将你的分支推送到 GitHub 后，在原仓库发起 PR。请在 PR 描述中详细说明你做了哪些改动、解决了什么问题或实现了什么功能。
+7. **代码评审**：项目维护者会对 PR 进行评审，可能会提出一些修改建议。请耐心跟进，直到 PR 被合并。
+
+### 贡献方向
+
+你可以在以下方向贡献你的才华：
+
+*   **🛠️ 开发新工具**：使用 `@ToolHandler` 注解创建新的工具（如浏览器自动化、数据分析、API 调用等），扩展 Agent 的能力。
+*   **🧠 增强记忆系统**：优化五层记忆的检索算法、遗忘曲线策略或知识蒸馏逻辑。
+*   **🔌 适配新模型/平台**：为 ModelGateway 增加新的模型提供商，或为生态系统增加新的平台适配器（如钉钉、Discord）。
+*   **🐛 修复 Bug**：在 [Issues](https://github.com/你的组织/promengineV3/issues) 页面找到你感兴趣的 bug 进行修复。
+*   **📝 完善文档**：改进或翻译本项目文档，让更多人能轻松上手。
+*   **🎨 优化前端体验**：完善璇玑台 (Xuanji Tai) 的 UI/UX 设计，使其更加美观易用。
+*   **🧪 编写测试**：为现有功能增加单元测试、集成测试，提升项目健壮性。
+
+### 开发指南
+
+*   **后端开发**：请确保本地已安装 JDK 21 和 Maven 3.8+。导入项目后，建议先完整阅读 `promengine-core` 模块中的接口定义，理解各模块的职责。
+*   **前端开发**：进入 `promengineV3-vue` 目录，执行 `npm install && npm run dev` 启动开发服务器。前端采用 Vue 3 + TypeScript，界面风格遵循蓝白灰极简美学。
+*   **记忆系统扩展**：如果你希望增加新的记忆层或域，请阅读 `promengine-memory` 模块下的 `MemoryMetadataRegistry` 和 `AeonMemoryProperties` 相关文档。
+*   **代码规范**：请确保你的代码遵循项目现有的编码风格，并为公共 API 添加清晰的 Javadoc 或 TypeScript 注释。
+
+### 社区与联系方式
+
+*   **GitHub Issues**: [https://github.com/AeolusJack/promengineV3/issues](https://github.com/AeolusJack/promengineV3/issues) (提交 Bug、功能建议)
+*   **GitHub Discussions**: [https://github.com/AeolusJack/promengineV3/discussions](https://github.com/AeolusJack/promengineV3/discussions) (技术讨论、问答)
+*   **邮箱**：`pengjingqing125@gmail.com` (作者邮箱，用于非公开沟通)
+
+无论你是修复了一个拼写错误，还是实现了一个复杂的 MCP 服务，你的名字都将出现在贡献者名单中。PromEngine 因你而进化，期待你的 Pull Request！
 
 **PromEngine — 你的数字伙伴，因你而进化。**
