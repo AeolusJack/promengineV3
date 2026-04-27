@@ -1,5 +1,246 @@
 # PromEngine v6.3
 
+**Your Digital Companion, Evolving with You.**
+
+PromEngine is a lightweight, embeddable, self-evolving agent runtime framework. Guided by the core principles of "lightweight core, plugin-based extensibility, local-first priority, and model agnosticism," it delivers a one-stop solution encompassing memory storage, multi-agent collaboration, tool invocation, security governance, and autonomous scheduling.
+
+Unlike simplistic "wrapper" tools, PromEngine features a built-in **five-tier memory system with forgetting curves, experience reuse, and autonomous distillation capabilities**, enabling agents to continuously learn and self-optimize through use, becoming a unique and trustworthy digital companion for every user.
+
+**Key Strengths:**
+
+*   **Architecturally supports petabyte-scale (TB-level) memory storage**, enabling long-term, persistent operation without data purges.
+*   **Significantly enhanced audit and compliance capabilities**. It is no longer a black box; all execution operations are logged and traceable, supporting full auditing.
+*   **Ecosystem compatibility** (fully compatible with MCP, SKILL, CLI, etc.).
+*   **Enhanced REACT (R-CCAM)** cognitive loop.
+
+---
+
+## ✨ Core Features
+
+### 🧠 A Memory System That Forgets and Refines
+
+*   **Five-Tier Hybrid Memory**: Mimics the human brain by organizing memory into five distinct layers—Working, Episodic, Semantic, Procedural, and Collective—each with its own specialized role.
+*   **Intelligent Forgetting Curve**: Memory strength naturally decays over time. Low-value information is automatically purged to prevent "knowledge obesity."
+*   **Automatic Experience Distillation**: Successfully repeated operational patterns are automatically extracted as "Procedural Memory." When similar scenarios are encountered later, they can be directly reused, making the agent smarter over time.
+
+### 🛠️ Declarative Tool System
+
+*   **Register a Tool with a Single Annotation**: Developers simply add the `@ToolHandler` annotation, and the system automatically handles tool registration, JSON Schema generation, and version management. Tools from connected MCPs are also automatically registered in the unified tool management system for use by models.
+*   **Safety First**: Local operations are automatically confined within a sandbox workspace, preventing security risks like path traversal.
+*   **Versioned Canary Releases**: Supports multiple coexisting versions of tools, enabling A/B testing and traffic canarying.
+
+### 🤖 Flexible Dual-Mode Orchestrator
+
+*   **SIMPLE Mode**: A traditional "receive message → return response" pattern for fast responses.
+*   **REACT (R-CCAM) Mode**: A structured cognitive loop following the Retrieval → Cognition → Control → Action → Memory phases, empowering the agent to autonomously use tools, perform multi-step reasoning, and record every thinking trajectory.
+
+### 🧩 General and Code Memory Domains, Plus Custom Domains
+
+*   **General Memory Domain**: Stores day-to-day conversations, user preferences, and generalized knowledge.
+*   **Code Memory Domain**: Designed specifically for developers, this domain can automatically extract code structures (ASTs) to understand project architecture and assist with coding.
+*   **Other Custom Memory Domains**: Additional memory domains, such as a Finance Domain or an Internal Corporate Knowledge Domain, can be added through metadata configuration. Tailored RAG enhancements can be implemented for different domains.
+
+### 🔒 Enterprise-Grade Governance and Compliance
+
+*   **TAME Dual-Track Scoring**: Each memory has two dimensions of scoring—"Utility" and "Safety"—to ensure data quality.
+*   **Audit Logs**: The provenance of all operations is fully traceable, meeting compliance requirements.
+*   **Cost Budget Controls**: Configurable daily/monthly API call budgets are available, automatically tripping circuit breakers when thresholds are met.
+
+### 🔗 Ecosystem Compatibility
+
+*   **MCP**: Full support for MCP services.
+*   **CLI**: Supports custom tools and is directly adaptable to various CLIs.
+*   **SKILL**: Supports reading and adaptation of `skill.md` content format.
+
+---
+
+## 🛠️ Technology Stack
+
+| Tier | Technology |
+|------|------|
+| **Backend Framework** | Spring Boot 3.2.5 |
+| **Language** | Java 21 |
+| **AI Integration** | Spring AI 1.0.0-M7 |
+| **Local Model** | Ollama |
+| **Vector Storage** | ChromaDB |
+| **Relational Storage** | SQLite (Hot Data) + Apache Parquet (Warm/Cold Data) |
+| **Full-Text Indexing** | Apache Lucene 9.10.0 |
+| **Graph Database** | Neo4j (Optional) |
+| **Sandbox Isolation** | Chicory (Wasm Runtime) |
+| **Frontend** | Vue 3 + Vite + Tailwind CSS |
+| **Build Tool** | Maven |
+
+---
+
+## 📁 Project Structure
+
+```
+promengine/
+├── promengine-core/            # Core Interfaces & Domain Models
+├── promengine-memory/          # Aeon Five-Tier Memory System
+├── promengine-model/           # Model Gateway & Multi-Model Adapter
+├── promengine-executor/        # Execution Orchestrator
+├── promengine-skill/           # Skill Management
+├── promengine-cognition/       # Cognitive Physiology Layer (Silicon/Carbon Dual Modes)
+├── promengine-swarm/           # Micro-Agent Cluster Scheduling
+├── promengine-neuro/           # Metacognition & Thinking Ripples
+├── promengine-temporal/        # Subjective Time Perception
+├── promengine-verifier/        # Formal Verification & Security Sandbox
+├── promengine-ethics/          # Ethical Decision-Making & Auditing
+├── promengine-prompt/          # Prompt Pipeline
+├── promengine-apex/            # API Cost Control Center
+├── promengine-identity-proxy/  # Digital Identity Proxy
+├── promengine-psych-aid/       # Psychological First Aid Module
+├── promengine-devtools/        # Developer Tools
+├── promengine-runtime/         # Runtime Assembly
+├── promengine-spring-boot-starter/  # Auto-Configuration Starter
+├── promengine-ecosystem/       # Ecosystem Adapter Aggregation
+│   ├── promengine-adapter-litellm/
+│   ├── promengine-adapter-mcp/
+│   ├── promengine-adapter-openclaw/
+│   ├── promengine-adapter-browseruse/
+│   └── promengine-adapter-feishu/
+└── promengine-web/             # Web Layer & REST API
+```
+
+---
+
+## 🚀 Quick Start
+
+### Requirements
+
+*   **JDK 21** or higher
+*   **Maven 3.8+**
+*   **Node.js 18+** (Frontend)
+*   **Docker** (For running ChromaDB, optional)
+*   **Ollama** (Local model runtime)
+
+### 1. Pull and Start Required Services
+
+```bash
+# Start ChromaDB (Vector Database)
+docker run -d -p 8000:8000 chromadb/chroma
+
+# Pull Ollama models
+ollama pull gemma4-custom:q4
+ollama pull nomic-embed-text   # For generating text embeddings
+```
+
+### 2. Start the Backend
+
+```bash
+cd promengine
+mvn clean install -DskipTests
+cd promengine-web
+mvn spring-boot:run
+```
+
+The backend runs on `http://localhost:8080` by default. A PromEngine ASCII art banner will be displayed upon successful startup.
+
+### 3. Start the Frontend
+
+```bash
+cd promengineV3-vue
+npm install
+npm run dev
+```
+
+The frontend runs on `http://localhost:3000`. Open your browser to access Xuanji Tai (璇玑台).
+
+---
+
+## 📖 User Documentation
+
+### 💬 Chat
+
+The Chat page is opened by default and supports:
+*   **Streaming Chat**: Displays model responses in real-time.
+*   **Thinking Process**: When the model's thinking mode is enabled, the chain of thought can be expanded for viewing.
+*   **Tool Invocation**: The agent automatically selects the appropriate tool based on your request.
+*   **Save to Memory, Export to Image/PDF, Share Link**: Available via the top-right menu on each message bubble.
+
+### 🧠 Memory Management
+
+The Memory Management page offers three sub-views:
+
+| View | Function |
+|------|------|
+| **Layer Browser** | Browse all memories across the five layers (Working/Episodic/Semantic/Procedural/Collective). Supports searching and marking entries as high-quality or deprecated. |
+| **Retrieval Debugger** | Test memory retrieval effectiveness and view hit details from different pathways (Hot Storage, Lucene, Vector). |
+| **Quality Workshop** | Manage pending review memories and high-score memories. Supports batch marking and forgetting curve simulations. |
+
+### 🤖 Agent and Skill
+
+*   **Agent Management**: Create, configure, enable, and disable intelligent agents. Supports defining Independent Lifeforms (Carbon Mode) and proactivity levels.
+*   **Agent Group Chat**: Create groups, assign roles to different Agents, and observe autonomous multi-agent discussions.
+*   **Skill Management**: Create, import, and edit skills. Supports installing community Skills from the MCP marketplace.
+
+### 🔧 Tool Workshop
+
+View all registered tools, including their name, description, category, and execution location. Supports:
+*   **Enable/Disable Tools** (takes effect immediately, no restart needed).
+*   **Tool Testing Sandbox**: Fill in parameters, run a tool trial, and view the returned result.
+*   **View Details**: Inspect parameter schemas and invocation statistics.
+
+### ⚙️ Configuration Center
+
+Visually configure parameters for the model gateway, memory strategy, sandbox, and cost budget.
+
+---
+
+## 📡 API Interface Overview
+*Note: Only a subset of interfaces is listed.*
+
+| Path | Method | Description |
+|------|------|------|
+| `/api/v1/chat` | POST | Synchronous Chat |
+| `/api/v1/chat/stream` | POST | Streaming Chat (SSE) |
+| `/api/v1/chat/sessions` | GET | Get session list |
+| `/api/v1/memory/layers` | GET | Get memory layers |
+| `/api/v1/memory/layer/{name}` | GET | Get memories for a specific layer |
+| `/api/v1/tools` | GET | Get tool list |
+| `/api/v1/tools/{name}/test` | POST | Test a tool |
+| `/api/v1/skills` | GET/POST | Skill management |
+| `/api/v1/agents` | GET/POST | Agent management |
+| ... | ... | ... |
+
+---
+
+## 📸 Frontend Screenshots
+
+<img width="1864" height="1234" alt="ezgif-498edafded01723f" src="https://github.com/user-attachments/assets/fa40500f-4a25-4a8d-81fb-3cb2bac2cc1d" />
+
+*   **Chat Interface**: Main chat area on the left, a collapsible session history list on the right, and an input box with a thinking ripple indicator at the bottom.
+*   **Memory Management**: Five-tier memory browsing, detail drawer, and quality workshop.
+*   **Agent Management**: Agent list, group chat interface, and configuration drawer.
+*   **Tool Workshop**: Tool cards, testing sandbox, and detail panel.
+
+---
+
+## 📄 License
+
+This project is open-sourced under the **Apache License 2.0**.
+
+---
+
+## 🔗 Related Links
+
+*   **Backend Project**: `promengine/`
+*   **Frontend Project**: `promengineV3-vue/` [https://github.com/AeolusJack/promengineV3-vue.git](https://github.com/AeolusJack/promengineV3-vue.git)
+*   **Ollama**: [https://ollama.com](https://ollama.com)
+*   **ChromaDB**: [https://www.trychroma.com](https://www.trychroma.com)
+*   **Spring AI**: [https://spring.io/projects/spring-ai](https://spring.io/projects/spring-ai)
+
+---
+
+**PromEngine — Your Digital Companion, Evolving with You.**
+
+
+
+---
+
+# PromEngine v6.3  中文版文档
+
 **你的数字伙伴，因你而进化。**
 
 PromEngine 是一个轻量级、可嵌入、自我进化的智能体运行时框架。它以“轻核心、插件化、本地优先、模型无关”为核心理念，提供从记忆存储、多 Agent 协作、工具调用、安全管控到自主调度的一站式解决方案。
@@ -10,7 +251,7 @@ PromEngine 是一个轻量级、可嵌入、自我进化的智能体运行时框
 
 从架构设计上就已支持TB级的记忆存储数据，完全可以长期不删档运行。   
 
-重点进行了审计合规增强，不在是黑盒，对于所以执行操作都有轨迹留痕，可支持审计。
+重点进行了审计合规增强，不再是黑盒，对于所有执行操作都有轨迹留痕，可支持审计。
 
 生态兼容（MCP、SKILL、CLI等完全兼容）。
 
