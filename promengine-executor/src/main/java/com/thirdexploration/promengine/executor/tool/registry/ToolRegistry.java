@@ -31,6 +31,31 @@ public class ToolRegistry implements ToolInfoProvider {
     private volatile List<ToolCallback> cachedCallbacks;
     private final ReadWriteLock cacheLock = new ReentrantReadWriteLock();
 
+    // 记录每个 MCP 服务器注册的工具全名，用于批量移除
+    private final Map<String, Set<String>> mcpServerTools = new ConcurrentHashMap<>();
+
+    public void registerMcpTool(ToolDefinition definition, ToolInvoker invoker) {
+        // 提取服务器名称（格式 mcp:<serverName>:<toolName>）
+        String[] parts = definition.getName().split(":", 3);
+        if (parts.length >= 2) {
+            String serverName = parts[1];
+            mcpServerTools.computeIfAbsent(serverName, k -> ConcurrentHashMap.newKeySet()).add(definition.getName());
+        }
+        // 调用原有的注册方法
+        register(definition, invoker);
+    }
+
+    public void removeMcpTools(String serverName) {
+        Set<String> toolNames = mcpServerTools.remove(serverName);
+        if (toolNames != null) {
+            for (String name : toolNames) {
+                tools.remove(name);
+            }
+            refreshCachedCallbacks();
+            log.info("Removed {} MCP tools for server {}", toolNames.size(), serverName);
+        }
+    }
+
 
     public List<ToolCallback> getAllToolCallbacks() {
         // 先尝试读锁获取缓存

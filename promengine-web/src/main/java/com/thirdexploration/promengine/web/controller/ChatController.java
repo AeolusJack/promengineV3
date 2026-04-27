@@ -94,29 +94,44 @@ public class ChatController {
 
     }
 
-    /**
-     * 流式聊天接口（GET 方式，方便浏览器测试）
-     */
-    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter chatStreamGet(@RequestParam String sessionId, @RequestParam String message) {
-        ChatRequest request = new ChatRequest(sessionId, message);
-        return chatStream(request);
-    }
+//    /**
+//     * 流式聊天接口（GET 方式，方便浏览器测试）
+//     */
+//    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+//    public SseEmitter chatStreamGet(@RequestParam String sessionId, @RequestParam String message) {
+//        ChatRequest request = new ChatRequest(sessionId, message);
+//        return chatStream(request);
+//    }
 
     /**
      * 流式聊天接口（POST 方式，SSE 封装）
      */
     @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter chatStream(@RequestBody ChatRequest request) {
-        SseEmitter emitter = new SseEmitter(120_000L); // 120秒超时
+    public SseEmitter chatStream(@RequestBody ChatRequest request,
+                                 @RequestHeader(value = "X-User-Id", required = false) String userId) {
+        String uid = userId != null ? userId : "default-user";
+        SseEmitter emitter = new SseEmitter(120_000L);
+
+        // 存储用户消息
+        ChatMessage userMsg = ChatMessage.builder()
+                .id(UUID.randomUUID().toString())
+                .userId(uid)
+                .sessionId(request.sessionId())
+                .role("user")
+                .content(request.message())
+                .timestamp(System.currentTimeMillis())
+                .createdAt(System.currentTimeMillis())
+                .build();
+        chatMessageRepository.save(userMsg);
 
         UserInput input = UserInput.builder()
                 .sessionId(request.sessionId())
                 .text(request.message())
+                .userId(uid)
                 .timestamp(System.currentTimeMillis())
                 .build();
 
-        // 在独立线程中处理，避免阻塞主线程
+        StringBuilder fullContent = new StringBuilder();
         Executors.newSingleThreadExecutor().execute(() -> {
             try {
                 Stream<CompletionChunk> chunkStream = agentRuntime.processStream(input);
@@ -125,8 +140,21 @@ public class ChatController {
                         if (chunk.isLast()) {
                             emitter.send(SseEmitter.event().data("[DONE]"));
                             emitter.complete();
+                            // 存储助手消息
+                            ChatMessage assistantMsg = ChatMessage.builder()
+                                    .id(UUID.randomUUID().toString())
+                                    .userId(uid)
+                                    .sessionId(request.sessionId())
+                                    .role("assistant")
+                                    .content(fullContent.toString())
+                                    .timestamp(System.currentTimeMillis())
+                                    .createdAt(System.currentTimeMillis())
+                                    .build();
+                            chatMessageRepository.save(assistantMsg);
                         } else {
-                            emitter.send(SseEmitter.event().data(chunk.getDelta()));
+                            String delta = chunk.getDelta();
+                            fullContent.append(delta);
+                            emitter.send(SseEmitter.event().data(delta));
                         }
                     } catch (IOException e) {
                         log.error("SSE send error", e);
@@ -140,11 +168,9 @@ public class ChatController {
             }
         });
 
-        // 设置超时和错误回调
         emitter.onTimeout(() -> log.warn("SSE emitter timed out"));
         emitter.onError(e -> log.error("SSE emitter error", e));
         emitter.onCompletion(() -> log.debug("SSE emitter completed"));
-
         return emitter;
     }
 

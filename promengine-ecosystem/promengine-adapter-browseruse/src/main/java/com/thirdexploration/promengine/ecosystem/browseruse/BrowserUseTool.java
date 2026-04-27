@@ -1,4 +1,4 @@
-package com.thirdexploration.ecosystem.browseruse;
+package com.thirdexploration.promengine.ecosystem.browseruse;
 
 import com.thirdexploration.promengine.executor.Tool;
 import lombok.RequiredArgsConstructor;

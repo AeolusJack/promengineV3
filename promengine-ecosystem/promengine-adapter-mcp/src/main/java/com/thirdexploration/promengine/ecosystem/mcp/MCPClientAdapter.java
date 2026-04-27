@@ -1,4 +1,4 @@
-package com.thirdexploration.ecosystem.mcp;
+package com.thirdexploration.promengine.ecosystem.mcp;
 
 import com.thirdexploration.promengine.executor.Tool;
 import lombok.RequiredArgsConstructor;

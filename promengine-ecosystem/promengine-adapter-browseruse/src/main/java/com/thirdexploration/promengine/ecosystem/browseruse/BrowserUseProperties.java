@@ -1,4 +1,4 @@
-package com.thirdexploration.ecosystem.browseruse;
+package com.thirdexploration.promengine.ecosystem.browseruse;
 
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;

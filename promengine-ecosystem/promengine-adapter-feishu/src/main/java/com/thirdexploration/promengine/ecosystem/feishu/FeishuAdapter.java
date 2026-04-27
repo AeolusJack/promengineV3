@@ -1,4 +1,4 @@
-package com.thirdexploration.ecosystem.feishu;
+package com.thirdexploration.promengine.ecosystem.feishu;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

@@ -197,7 +197,35 @@ public class AeonMemoryInitializer {
                       created_at INTEGER NOT NULL
                   )
                   """,
-                        "CREATE INDEX IF NOT EXISTS idx_chat_user_session ON chat_messages(user_id, session_id, timestamp)"
+                        "CREATE INDEX IF NOT EXISTS idx_chat_user_session ON chat_messages(user_id, session_id, timestamp)",
+
+                // skill表
+                """
+                CREATE TABLE IF NOT EXISTS skills (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT DEFAULT '',
+                    version TEXT DEFAULT '1.0.0',
+                    source TEXT DEFAULT 'custom',
+                    content TEXT NOT NULL,
+                    enabled INTEGER DEFAULT 1,
+                    associated_agents TEXT DEFAULT '[]',
+                    parameters TEXT DEFAULT '{}',
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(name)",
+                //mcp服务表
+                """
+                CREATE TABLE IF NOT EXISTS mcp_servers (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    enabled INTEGER DEFAULT 1,
+                    created_at INTEGER NOT NULL
+                )
+                """
 
         );
 

@@ -1,4 +1,4 @@
-package com.thirdexploration.ecosystem.openclaw;
+package com.thirdexploration.promengine.ecosystem.openclaw;
 
 import com.thirdexploration.promengine.skill.Skill;
 import com.thirdexploration.promengine.skill.SkillRegistry;
@@ -6,10 +6,8 @@ import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-import org.yaml.snakeyaml.Yaml;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;

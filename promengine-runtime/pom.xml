@@ -54,6 +54,16 @@
             <artifactId>promengine-skill</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <dependency>
+            <groupId>com.thirdexploration</groupId>
+            <artifactId>promengine-ecosystem</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.thirdexploration</groupId>
+            <artifactId>promengine-adapter-mcp</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <!-- 核心接口模块 -->
         <dependency>
             <groupId>com.thirdexploration</groupId>

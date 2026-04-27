@@ -4,7 +4,6 @@
     <file url="file://$PROJECT_DIR$/promengine-apex/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/promengine-cognition/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/promengine-core/src/main/java" charset="UTF-8" />
-    <file url="file://$PROJECT_DIR$/promengine-core/src/main/resources" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/promengine-devtools/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/promengine-ecosystem/promengine-adapter-browseruse/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/promengine-ecosystem/promengine-adapter-feishu/src/main/java" charset="UTF-8" />
@@ -14,7 +13,6 @@
     <file url="file://$PROJECT_DIR$/promengine-ecosystem/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/promengine-ecosystem/src/main/resources" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/promengine-ethics/src/main/java" charset="UTF-8" />
-    <file url="file://$PROJECT_DIR$/promengine-evolution/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/promengine-executor/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/promengine-identity-proxy/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/promengine-memory/src/main/java" charset="UTF-8" />

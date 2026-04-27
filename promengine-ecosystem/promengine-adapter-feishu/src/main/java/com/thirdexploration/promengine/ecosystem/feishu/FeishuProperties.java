@@ -1,4 +1,4 @@
-package com.thirdexploration.ecosystem.feishu;
+package com.thirdexploration.promengine.ecosystem.feishu;
 
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;

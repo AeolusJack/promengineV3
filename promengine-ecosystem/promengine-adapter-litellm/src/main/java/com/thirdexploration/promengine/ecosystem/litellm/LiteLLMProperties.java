@@ -1,4 +1,4 @@
-package com.thirdexploration.ecosystem.litellm;
+package com.thirdexploration.promengine.ecosystem.litellm;
 
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;

@@ -8,6 +8,8 @@ spring:
       enabled: true
     livereload:
       enabled: true
+  autoconfigure:
+    exclude: com.alibaba.fastjson2.spring.boot.autoconfigure.FastJsonAutoConfiguration
 
 promengine:
   data-dir: ./data
@@ -46,3 +48,4 @@ logging:
   level:
     com.thirdexploration.promengine: DEBUG
     com.thirdexploration.promengine.memory: TRACE   # 查看详细记忆操作
+    org.springframework.web.HttpLogging: INFO

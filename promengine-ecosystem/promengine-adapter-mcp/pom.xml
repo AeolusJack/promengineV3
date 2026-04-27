@@ -9,7 +9,10 @@
         <artifactId>promengine-ecosystem</artifactId>
         <version>3.0-SNAPSHOT</version>
     </parent>
-
+    <properties>
+        <!-- 第三方版本集中管理（仅本模块特有或需要覆盖的） -->
+        <spring-ai.version>1.0.0-M7</spring-ai.version>
+    </properties>
     <artifactId>promengine-adapter-mcp</artifactId>
 
     <dependencies>
@@ -24,6 +27,15 @@
         <dependency>
             <groupId>com.thirdexploration</groupId>
             <artifactId>promengine-executor</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-mcp-client</artifactId>
+            <version>${spring-ai.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
         </dependency>
     </dependencies>
 </project>

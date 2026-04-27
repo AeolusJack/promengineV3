@@ -1,4 +1,4 @@
-package com.thirdexploration.ecosystem.openclaw;
+package com.thirdexploration.promengine.ecosystem.openclaw;
 
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;

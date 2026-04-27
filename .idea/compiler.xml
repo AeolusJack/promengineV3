@@ -1,44 +1,38 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="CompilerConfiguration">
-    <excludeFromCompile>
-      <directory url="file://$PROJECT_DIR$/src/main/resources/archetype-resources" includeSubdirectories="true" />
-    </excludeFromCompile>
     <annotationProcessing>
       <profile default="true" name="Default" enabled="true" />
       <profile name="Maven default annotation processors profile" enabled="true">
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
-        <module name="promengine-adapter-browseruse" />
-        <module name="promengine-devtools" />
-        <module name="promengine-ethics" />
-        <module name="promengine-psych-aid" />
-        <module name="promengine-temporal" />
-        <module name="promengine-adapter-openclaw" />
-        <module name="promengine-executor" />
         <module name="promengine-runtime" />
         <module name="promengine-neuro" />
         <module name="promengine-web" />
+        <module name="promengine-adapter-browseruse" />
+        <module name="promengine-devtools" />
         <module name="promengine-cognition" />
         <module name="promengine-adapter-mcp" />
         <module name="promengine-spring-boot-starter" />
         <module name="promengine-swarm" />
         <module name="promengine-adapter-feishu" />
+        <module name="promengine-ethics" />
+        <module name="promengine-psych-aid" />
         <module name="promengine-identity-proxy" />
+        <module name="promengine-temporal" />
         <module name="promengine-model" />
-        <module name="promengine-memory" />
         <module name="promengine-adapter-litellm" />
+        <module name="promengine-memory" />
         <module name="promengine-core" />
+        <module name="promengine-adapter-openclaw" />
         <module name="promengine-apex" />
+        <module name="promengine-executor" />
         <module name="promengine-skill" />
         <module name="promengine-verifier" />
         <module name="promengine-prompt" />
       </profile>
     </annotationProcessing>
-    <bytecodeTargetLevel>
-      <module name="promengine-evolution" target="21" />
-    </bytecodeTargetLevel>
   </component>
   <component name="JavacSettings">
     <option name="ADDITIONAL_OPTIONS_OVERRIDE">
@@ -51,9 +45,7 @@
       <module name="promengine-cognition" options="-parameters" />
       <module name="promengine-core" options="-parameters" />
       <module name="promengine-devtools" options="-parameters" />
-      <module name="promengine-ecosystem" options="" />
       <module name="promengine-ethics" options="-parameters" />
-      <module name="promengine-evolution" options="-parameters" />
       <module name="promengine-executor" options="-parameters" />
       <module name="promengine-identity-proxy" options="-parameters" />
       <module name="promengine-memory" options="-parameters" />
