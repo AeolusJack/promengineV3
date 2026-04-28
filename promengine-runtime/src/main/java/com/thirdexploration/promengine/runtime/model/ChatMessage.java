@@ -1,4 +1,4 @@
-package com.thirdexploration.promengine.web.model;
+package com.thirdexploration.promengine.runtime.model;
 
 import lombok.Builder;
 import lombok.Data;

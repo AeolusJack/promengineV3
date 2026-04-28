@@ -225,7 +225,52 @@ public class AeonMemoryInitializer {
                     enabled INTEGER DEFAULT 1,
                     created_at INTEGER NOT NULL
                 )
+                """,
+                // agent管理有关的表
                 """
+                CREATE TABLE IF NOT EXISTS agents (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT DEFAULT '',
+                    avatar TEXT DEFAULT '',
+                    mode TEXT DEFAULT 'silicon',
+                    is_independent INTEGER DEFAULT 0,
+                    system_prompt TEXT DEFAULT '',
+                    skills TEXT DEFAULT '[]',
+                    tools TEXT DEFAULT '[]',
+                    proactive_level TEXT DEFAULT 'none',
+                    schedule TEXT DEFAULT NULL,
+                    model_preference TEXT DEFAULT NULL,
+                    memory_domain TEXT DEFAULT 'general',
+                    visibility TEXT DEFAULT 'private',
+                    enabled INTEGER DEFAULT 1,
+                    created_by TEXT DEFAULT 'frontend',
+                    created_at INTEGER NOT NULL
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_agents_user ON agents(user_id)",
+                """
+                CREATE TABLE IF NOT EXISTS agent_groups (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    topic TEXT DEFAULT '',
+                    max_rounds INTEGER DEFAULT 10,
+                    auto_mode INTEGER DEFAULT 1,
+                    status TEXT DEFAULT 'active',
+                    created_at INTEGER NOT NULL
+                )
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS group_agents (
+                    group_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL,
+                    role TEXT DEFAULT '',
+                    PRIMARY KEY (group_id, agent_id)
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_group_user ON agent_groups(user_id)"
 
         );
 

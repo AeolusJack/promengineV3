@@ -2,7 +2,7 @@ package com.thirdexploration.promengine.web.controller;
 
 import com.thirdexploration.promengine.ecosystem.mcp.McpClientService;
 import com.thirdexploration.promengine.ecosystem.mcp.McpServerRecord;
-import com.thirdexploration.promengine.web.dto.ApiResponse;
+import com.thirdexploration.promengine.runtime.dto.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 

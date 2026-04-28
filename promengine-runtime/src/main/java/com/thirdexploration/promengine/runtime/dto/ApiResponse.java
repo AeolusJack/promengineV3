@@ -1,9 +1,7 @@
-package com.thirdexploration.promengine.web.dto;
+package com.thirdexploration.promengine.runtime.dto;
 
 import lombok.Builder;
 import lombok.Data;
-
-import java.util.Map;
 
 @Data
 @Builder

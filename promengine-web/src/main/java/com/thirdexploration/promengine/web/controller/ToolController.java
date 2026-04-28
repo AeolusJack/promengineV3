@@ -3,7 +3,7 @@ package com.thirdexploration.promengine.web.controller;
 import com.thirdexploration.promengine.core.ToolInfoProvider;
 import com.thirdexploration.promengine.executor.tool.registry.ToolRegistry;
 import com.thirdexploration.promengine.executor.tool.registry.ToolDefinition;
-import com.thirdexploration.promengine.web.dto.ApiResponse;
+import com.thirdexploration.promengine.runtime.dto.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 

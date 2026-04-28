@@ -13,8 +13,8 @@ public class ThinkingRippleGenerator {
 
     public void generate(double entropy) {
         if (!properties.isThinkingRippleEnabled()) return;
-
-        RippleEvent event = new RippleEvent(
+        //思维涟漪事件
+        RippleEvent event = new RippleEvent("ripple",
                 entropy,
                 entropy > 0.7 ? "red" : "green",
                 System.currentTimeMillis()
@@ -22,5 +22,5 @@ public class ThinkingRippleGenerator {
         webSocketHandler.broadcast(event);
     }
 
-    public record RippleEvent(double entropy, String color, long timestamp) {}
+    public record RippleEvent(String type,double entropy, String color, long timestamp) {}
 }

@@ -4,8 +4,8 @@ import com.thirdexploration.promengine.core.AgentRuntime;
 import com.thirdexploration.promengine.core.domain.CompletionChunk;
 import com.thirdexploration.promengine.core.domain.Response;
 import com.thirdexploration.promengine.core.domain.UserInput;
-import com.thirdexploration.promengine.web.model.ChatMessage;
-import com.thirdexploration.promengine.web.repository.ChatMessageRepository;
+import com.thirdexploration.promengine.runtime.model.ChatMessage;
+import com.thirdexploration.promengine.runtime.repository.ChatMessageRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -94,14 +94,6 @@ public class ChatController {
 
     }
 
-//    /**
-//     * 流式聊天接口（GET 方式，方便浏览器测试）
-//     */
-//    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-//    public SseEmitter chatStreamGet(@RequestParam String sessionId, @RequestParam String message) {
-//        ChatRequest request = new ChatRequest(sessionId, message);
-//        return chatStream(request);
-//    }
 
     /**
      * 流式聊天接口（POST 方式，SSE 封装）

@@ -1,6 +1,6 @@
-package com.thirdexploration.promengine.web.repository;
+package com.thirdexploration.promengine.runtime.repository;
 
-import com.thirdexploration.promengine.web.model.ChatMessage;
+import com.thirdexploration.promengine.runtime.model.ChatMessage;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -8,7 +8,6 @@ import org.springframework.stereotype.Repository;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
-import java.util.UUID;
 
 @Repository
 public class ChatMessageRepository {
@@ -41,6 +40,16 @@ public class ChatMessageRepository {
                 ORDER BY timestamp ASC
                 """;
         return jdbcTemplate.query(sql, new ChatMessageRowMapper(), userId, sessionId);
+    }
+
+
+    public List<ChatMessage> findBySessionIdAndRole(String role, String sessionId) {
+        String sql = """
+                SELECT * FROM chat_messages
+                WHERE role = ? AND session_id = ?
+                ORDER BY timestamp ASC
+                """;
+        return jdbcTemplate.query(sql, new ChatMessageRowMapper(), role, sessionId);
     }
 
 //    /**
