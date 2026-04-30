@@ -7,6 +7,7 @@ import com.thirdexploration.promengine.runtime.service.AgentGroupService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
+import java.lang.reflect.InvocationTargetException;
 import java.util.*;
 
 @RestController
@@ -28,7 +29,7 @@ public class AgentGroupController {
 
 
     @GetMapping("/{id}/messages")
-    public ApiResponse<List<ChatMessage>> getGroupMessages(@PathVariable String id) {
+    public ApiResponse<List<ChatMessage>> getGroupMessages(@PathVariable String id) throws InvocationTargetException, IllegalAccessException {
         return ApiResponse.ok(groupService.getMessages(id));
     }
 
@@ -46,6 +47,7 @@ public class AgentGroupController {
     @PostMapping("/{id}/stop")
     public ApiResponse<Void> stopDiscussion(@PathVariable String id) {
         // 更新状态为 paused
+        groupService.stopDiscussion(id);
         return ApiResponse.ok(null);
     }
 }

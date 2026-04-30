@@ -93,7 +93,15 @@ promengine:
     rotation: daily
     compress: true
     retention-days: 90
-
+#  缓存配置
+  cache:
+    regions:
+      agentState:
+        max-size: 2000
+        ttl-seconds: 1800
+      groupState:
+        max-size: 1000
+        ttl-seconds: 1800
 # -------------------------------------------------
 # Aeon 记忆系统配置
 # -------------------------------------------------

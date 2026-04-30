@@ -13,6 +13,7 @@ import com.thirdexploration.promengine.runtime.repository.GroupChatMessageReposi
 import com.thirdexploration.promengine.prompt.core.PromptContext;
 import com.thirdexploration.promengine.prompt.core.PromptPipeline;
 import com.thirdexploration.promengine.core.domain.UserInput;
+import io.micrometer.common.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -37,8 +38,8 @@ public class AgentMessageGenerator {
 
 
 
-    private void sendRippleSampled(String type, String sessionId, String agentId, String text) {
-        GroupChatEvent build = GroupChatEvent.builder().agentId(agentId).sessionId(sessionId).text(text).type(type).build();
+    private void sendRippleSampled(String type, String sessionId, String agentId,String agentName, String text) {
+        GroupChatEvent build = GroupChatEvent.builder().agentId(agentId).agentName(agentName).sessionId(sessionId).text(text).type(type).build();
         rippleHandler.sendToSession(sessionId, build);
     }
 
@@ -80,15 +81,10 @@ public class AgentMessageGenerator {
             CompletableFuture<Response> execute = orchestrator.execute(ctx);
             Response join = execute.join();
 
-//            ChatClient chatClient = chatClientBuilder.build();
-//            String response = chatClient.prompt()
-//                    .user(fullPrompt.toString())
-//                    .call()
-//                    .content();
             String response = join.getText();
             log.debug("Agent {} generated message: {}", ga.getName(), response);
             //发送websocket事件
-            sendRippleSampled("group-message",group.getId(),ga.getAgentId(),response);
+            sendRippleSampled("group-message",group.getId(),ga.getAgentId(),ga.getName(),response);
             return response != null ? response.trim() : "（Agent 暂时没有想好说什么）";
         } catch (Exception e) {
             log.error("Failed to generate message for agent {}", ga.getAgentId(), e);
@@ -105,8 +101,14 @@ public class AgentMessageGenerator {
                 .map(msg -> {
                     if ("agent".equals(msg.getRole())) {
                         String sessionName = msg.getSessionName();
-                        String[] split = sessionName.split("_");
-                        return split[1] + "（扮演" + getRoleName(history, msg.getUserId()) + "）: " + msg.getContent();
+                        String agentName = "";
+                        if (StringUtils.isNotBlank(sessionName)){
+                            String[] split = sessionName.split("_");
+                            agentName = split[1];
+                        }else {
+                            agentName = currentAgent.getName();
+                        }
+                        return agentName + "（扮演" + getRoleName(history, msg.getUserId()) + "）: " + msg.getContent();
                     } else {
                         return "主持人: " + msg.getContent();
                     }

@@ -11,6 +11,7 @@ public class GroupChatEvent extends TopEvent {
 
     private String sessionId;
     private String agentId;
+    private String agentName;
     private String text;
     private String type; //事件消息类型
 }

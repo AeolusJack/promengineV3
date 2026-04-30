@@ -20,13 +20,14 @@ public class ChatMessageRepository {
 
     public void save(ChatMessage message) {
         String sql = """
-                INSERT INTO chat_messages (id, user_id, session_id, role, content, timestamp, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO chat_messages (id, user_id, session_id, session_name,role, content, timestamp, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?,?)
                 """;
         jdbcTemplate.update(sql,
                 message.getId(),
                 message.getUserId(),
                 message.getSessionId(),
+                message.getSessionName(),
                 message.getRole(),
                 message.getContent(),
                 message.getTimestamp(),
@@ -52,6 +53,15 @@ public class ChatMessageRepository {
         return jdbcTemplate.query(sql, new ChatMessageRowMapper(), role, sessionId);
     }
 
+    public List<ChatMessage> findBySessionId( String sessionId) {
+        String sql = """
+                SELECT * FROM chat_messages
+                WHERE session_id = ?
+                ORDER BY timestamp ASC
+                """;
+        return jdbcTemplate.query(sql, new ChatMessageRowMapper(), sessionId);
+    }
+
 //    /**
 //     * 获取指定用户的所有会话 ID（降序，最近活跃在前）
 //     */
@@ -72,6 +82,7 @@ public class ChatMessageRepository {
                     .id(rs.getString("id"))
                     .userId(rs.getString("user_id"))
                     .sessionId(rs.getString("session_id"))
+                    .sessionName(rs.getString("session_name"))
                     .role(rs.getString("role"))
                     .content(rs.getString("content"))
                     .timestamp(rs.getLong("timestamp"))

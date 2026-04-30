@@ -10,6 +10,8 @@ public class ChatMessage {
     private String userId;
     private String sessionId;
     private String sessionName;   // 新增
+    private String agentName;
+    private String agentId;
     private String role;        // user / assistant / system
     private String content;
     private long timestamp;

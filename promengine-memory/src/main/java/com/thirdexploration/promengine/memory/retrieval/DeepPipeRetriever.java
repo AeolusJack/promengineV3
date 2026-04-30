@@ -5,11 +5,13 @@ import com.thirdexploration.promengine.memory.model.MemoryRecord;
 import com.thirdexploration.promengine.memory.storage.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.ListUtils;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -51,7 +53,7 @@ public class DeepPipeRetriever {
 
         for (String domain : domains) {
             // 1. 初始向量检索
-            float[] queryVector = embeddingService.embed(query.getText());
+            float[] queryVector = embeddingService.embed( query.getText().length() > 300 ? query.getText().substring(0,300) : query.getText());
             List<MemoryRecord> vectorResults = semanticMemory.semanticSearch(queryVector, query.getMaxResults() * 2);
 
             // 2. 如果启用深度增强
@@ -59,8 +61,12 @@ public class DeepPipeRetriever {
                 // 查询重写
                 String rewritten = rewriteQueryWithLLM(query.getText());
                 float[] rewrittenVector = embeddingService.embed(rewritten);
-                vectorResults.addAll(semanticMemory.semanticSearch(rewrittenVector, query.getMaxResults()));
-
+                if (rewrittenVector != null){
+                    List<MemoryRecord> memoryRecords = semanticMemory.semanticSearch(rewrittenVector, query.getMaxResults());
+                    if (memoryRecords != null && !memoryRecords.isEmpty()){
+                        vectorResults.addAll(memoryRecords);
+                    }
+                }
                 // 意图解析与扩展（略）
             }
 
@@ -68,10 +74,12 @@ public class DeepPipeRetriever {
             if (graphService != null) {
                 List<String> seedIds = vectorResults.stream().map(MemoryRecord::getId).toList();
                 List<String> expandedIds = graphService.expandByRelations(seedIds);
-                vectorResults.addAll(semanticMemory.findByIds(expandedIds));
+                List<MemoryRecord> byIds = semanticMemory.findByIds(expandedIds);
+                if (byIds != null && !byIds.isEmpty()){
+                    vectorResults.addAll(byIds);
+                }
             }
-
-            allResults.addAll(vectorResults);
+             allResults.addAll(vectorResults);
         }
 
         // 去重

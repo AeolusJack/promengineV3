@@ -31,6 +31,6 @@ public class GroupChatMessageRepository extends ChatMessageRepository {
     }
 
     public List<ChatMessage> findByGroupId(String groupId) {
-        return findBySessionIdAndRole("agent", groupId);
+        return findBySessionId( groupId);
     }
 }

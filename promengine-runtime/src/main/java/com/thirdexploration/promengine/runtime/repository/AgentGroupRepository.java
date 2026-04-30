@@ -40,6 +40,20 @@ public class AgentGroupRepository {
                 group.getCreatedAt());
     }
 
+    public void update(AgentGroup group) {
+        jdbcTemplate.update(
+                "UPDATE agent_groups SET user_id=?, name=?, topic=?, max_rounds=?, auto_mode=?, status=? WHERE id=?",
+                group.getUserId(),
+                group.getName(),
+                group.getTopic(),
+                group.getMaxRounds(),
+                group.isAutoMode() ? 1 : 0,
+                group.getStatus(),
+                group.getId()
+        );
+    }
+
+
     public void delete(String id) {
         jdbcTemplate.update("DELETE FROM group_agents WHERE group_id = ?", id);
         jdbcTemplate.update("DELETE FROM agent_groups WHERE id = ?", id);
