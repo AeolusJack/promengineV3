@@ -6,6 +6,7 @@ import com.thirdexploration.promengine.memory.evolution.TAMEEvaluator;
 import com.thirdexploration.promengine.memory.model.*;
 import com.thirdexploration.promengine.memory.retrieval.EmbeddingService;
 import com.thirdexploration.promengine.memory.retrieval.EnhancedRetrievalOrchestrator;
+import com.thirdexploration.promengine.memory.retrieval.LuceneIndexService;
 import com.thirdexploration.promengine.memory.storage.*;
 import com.thirdexploration.promengine.memory.util.MemoryDeduplicator;
 import lombok.RequiredArgsConstructor;
@@ -41,13 +42,11 @@ public class UnifiedMemoryAPIImpl implements UnifiedMemoryAPI {
     private final EmbeddingService embeddingService;
     private final AeonMemoryProperties properties;
 
+    private final LuceneIndexService luceneIndexService;
     @Override
     @Transactional
     public void remember(String content, MemoryMetadata metadata) {
-        if (!shouldStore(content)) {
-            log.debug("Memory rejected by governor or duplicate");
-            return;
-        }
+        if (!shouldStore(content)) return;
 
         MemoryRecord record = buildRecord(content, metadata);
         tameEvaluator.evaluateAndEnrich(record);
@@ -55,9 +54,16 @@ public class UnifiedMemoryAPIImpl implements UnifiedMemoryAPI {
         String layer = determineLayer(metadata);
         record.setLayer(layer);
 
-        // 生成向量
+        // ---- 生成向量（如果未提供）----
         if (record.getVector() == null) {
             record.setVector(embeddingService.embed(content));
+        }
+
+        // ---- 更新 Lucene 索引（针对情景/语义层）----
+        if ("episodic".equals(layer)) {
+            luceneIndexService.indexEpisodic(record.getId(), record.getContent(), record.getSummary());
+        } else if ("semantic".equals(layer)) {
+            luceneIndexService.indexSemantic(record.getId(), record.getContent(), record.getSummary());
         }
 
         // 分层存储
@@ -68,8 +74,6 @@ public class UnifiedMemoryAPIImpl implements UnifiedMemoryAPI {
             case "procedural" -> proceduralMemory.store(record);
             case "collective" -> collectiveMemory.store(record);
         }
-
-        log.info("Stored memory: id={}, layer={}, domain={}", record.getId(), layer, record.getDomain());
     }
 
     @Override
@@ -160,7 +164,7 @@ public class UnifiedMemoryAPIImpl implements UnifiedMemoryAPI {
                 .metadata(metadata.getExtra())
                 .domain(domain)
                 .projectId(metadata.getProjectId())
-                .strength(1.0f)
+                .strength(1.0)
                 .utilityScore(0.5)
                 .safetyScore(0.9)
                 .sharingLevel(sharingLevel)

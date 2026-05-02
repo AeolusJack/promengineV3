@@ -4,10 +4,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * aeon
@@ -95,7 +92,7 @@ public class MemoryRecord {
     /**
      * 遗忘曲线强度 (0-1)，随时间衰减
      */
-    private float strength;
+    private double strength;
 
     /**
      * 效用评分 (0-1)，TAME 执行者轨道
@@ -191,6 +188,7 @@ public class MemoryRecord {
     /**
      * 转换为 MemoryEntry（兼容旧接口）
      */
+    // MemoryRecord.java 中的 toMemoryEntry 方法
     public MemoryEntry toMemoryEntry() {
         return MemoryEntry.builder()
                 .id(id)
@@ -201,9 +199,29 @@ public class MemoryRecord {
                 .memoryType(memoryType)
                 .importance(importance)
                 .metadata(metadata)
-                .strength(strength)
+                .strength(strength)              // 补全
                 .layer(layer)
                 .domain(domain)
+                .utilityScore(utilityScore)      // 补全
+                .safetyScore(safetyScore)        // 补全
+                .sharingLevel(sharingLevel)      // 如果前端需要
                 .build();
     }
+    // 在 MemoryRecord.java 中添加方法
+    public Map<String, Object> toMemoryEntryAsMap() {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("id", this.id);
+        map.put("content", this.content);
+        map.put("summary", this.summary);
+        map.put("domain", this.domain);
+        map.put("layer", this.layer);
+        map.put("strength", this.strength);
+        map.put("importance", this.importance);
+        map.put("utilityScore", this.utilityScore);
+        map.put("safetyScore", this.safetyScore);
+        map.put("timestamp", this.timestamp != null ? this.timestamp.toEpochMilli() : null);
+        map.put("memoryType", this.memoryType);
+        return map;
+    }
+
 }

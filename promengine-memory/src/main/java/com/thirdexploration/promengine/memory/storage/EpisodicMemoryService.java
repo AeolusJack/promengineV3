@@ -32,6 +32,11 @@ public class EpisodicMemoryService {
     private final ObjectMapper objectMapper;
     private final MemoryMetadataRegistry registry;
 
+    public void updateScores(String id, double utilityScore, double safetyScore) {
+        String sql = "UPDATE episodic_memory SET utility_score = ?, safety_score = ? WHERE id = ?";
+        jdbcTemplate.update(sql, utilityScore, safetyScore, id);
+        log.debug("Updated scores for episodic memory: id={}", id);
+    }
     private static final String INSERT_SQL = """
             INSERT INTO episodic_memory
             (id, user_id, content, summary, timestamp, memory_type, importance,
@@ -111,6 +116,10 @@ public class EpisodicMemoryService {
                     .userId(x.getUserId())
                     .sharingLevel(x.getSharingLevel())
                     .content(x.getContent())
+                    .strength(x.getStrength())              // 补全
+                    .utilityScore(x.getUtilityScore())      // 补全
+                    .safetyScore(x.getSafetyScore())        // 补全
+                    .sharingLevel(x.getSharingLevel())      // 如果前端需要
                     .metadata(x.getMetadata())
                     .summary(x.getSummary()).build();
             return build;
@@ -303,8 +312,8 @@ public class EpisodicMemoryService {
                         .projectId(rs.getString("project_id"))
                         .strength(rs.getFloat("strength"))
                         .layer(rs.getString("layer"))
-                        .utilityScore(rs.getDouble("utility_score"))
-                        .safetyScore(rs.getDouble("safety_score"))
+                        .utilityScore(rs.getFloat("utility_score"))
+                        .safetyScore(rs.getFloat("safety_score"))
                         .sharingLevel(rs.getString("sharing_level"))
                         .provenance(provenance)
                         .retrievalCount(rs.getInt("retrieval_count"))

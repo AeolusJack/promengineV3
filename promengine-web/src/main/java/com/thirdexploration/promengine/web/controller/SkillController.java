@@ -1,11 +1,14 @@
 package com.thirdexploration.promengine.web.controller;
 
 import com.thirdexploration.promengine.runtime.dto.ApiResponse;
+import com.thirdexploration.promengine.skill.model.SkillRecord;
 import com.thirdexploration.promengine.skill.service.SkillService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
+
+import static org.hibernate.internal.util.collections.CollectionHelper.toMap;
 
 @RestController
 @RequestMapping("/api/v1/skills")
@@ -64,5 +67,12 @@ public class SkillController {
         String serverUrl = body.get("serverUrl");
         // 实际实现会连接 MCP 服务并注册工具，目前仅返回成功
         return ApiResponse.ok("MCP install request accepted for " + serverUrl);
+    }
+
+    @GetMapping("/{id}")
+    public ApiResponse<Map<String, ?>> getSkill(@PathVariable String id) {
+        SkillRecord record = skillService.findById(id);
+        if (record == null) return ApiResponse.error("Skill not found");
+        return ApiResponse.ok(toMap(record));
     }
 }

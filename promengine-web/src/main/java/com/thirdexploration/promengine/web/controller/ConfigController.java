@@ -4,6 +4,7 @@ import com.thirdexploration.promengine.core.ConfigManagementService;
 import com.thirdexploration.promengine.core.domain.ConfigFieldMeta;
 import com.thirdexploration.promengine.core.domain.ConfigUpdateResult;
 import com.thirdexploration.promengine.core.domain.UserConfigView;
+import com.thirdexploration.promengine.runtime.dto.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -30,5 +31,10 @@ public class ConfigController {
     @PatchMapping
     public ConfigUpdateResult updateConfig(@RequestParam String userId, @RequestBody Map<String, Object> updates) {
         return configService.updateConfig(userId, updates);
+    }
+    @PostMapping("/reset")
+    public ApiResponse<Void> resetConfig(@RequestParam String userId) {
+        configService.resetToDefault(userId); // 需在 ConfigManagementService 接口和实现中添加
+        return ApiResponse.ok(null);
     }
 }

@@ -4,6 +4,7 @@ import com.thirdexploration.promengine.memory.model.MemoryRecord;
 import com.thirdexploration.promengine.memory.model.Provenance;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.eclipse.jetty.util.StringUtil;
 import org.springframework.stereotype.Component;
 
 /**
@@ -17,10 +18,10 @@ public class TAMEEvaluator {
 
     public void evaluateAndEnrich(MemoryRecord record) {
         double utility = computeUtility(record);
-        record.setUtilityScore(utility);
+        record.setUtilityScore(Float.valueOf(String.valueOf(utility)));
 
         double safety = computeSafety(record);
-        record.setSafetyScore(safety);
+        record.setSafetyScore(Float.valueOf(String.valueOf(safety)));
 
         if (safety < 0.3) {
             record.getMetadata().put("review_required", true);

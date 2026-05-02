@@ -2,27 +2,31 @@ package com.thirdexploration.promengine.memory.storage;
 
 import com.thirdexploration.promengine.memory.model.CausalLink;
 import com.thirdexploration.promengine.memory.model.MemoryRecord;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.Session;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.neo4j.driver.Values;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 
-/**
- * aeon
- */
 @Slf4j
 @Service
-@RequiredArgsConstructor
-@ConditionalOnProperty(name = "aeon.memory.graph.enabled", havingValue = "true")
 public class Neo4jGraphService {
 
-    private final Driver neo4jDriver;
+    @Autowired(required = false)
+    private Driver neo4jDriver;
+
+    private boolean isAvailable() {
+        return neo4jDriver != null;
+    }
 
     public void upsertMemoryNode(MemoryRecord record) {
+        if (!isAvailable()) {
+            log.debug("Neo4j is not available, skip upsert");
+            return;
+        }
         try (Session session = neo4jDriver.session()) {
             session.executeWrite(tx -> {
                 String query = """
@@ -34,7 +38,7 @@ public class Neo4jGraphService {
                             m.strength = $strength,
                             m.utilityScore = $utilityScore
                         """;
-                tx.run(query, org.neo4j.driver.Values.parameters(
+                tx.run(query, Values.parameters(
                         "id", record.getId(),
                         "content", record.getContent(),
                         "summary", record.getSummary(),
@@ -45,41 +49,49 @@ public class Neo4jGraphService {
                 ));
                 return null;
             });
+        } catch (Exception e) {
+            log.warn("Failed to upsert memory node in Neo4j: {}", e.getMessage());
         }
     }
 
     public void createCausalLink(CausalLink link) {
+        if (!isAvailable()) return;
         try (Session session = neo4jDriver.session()) {
             session.executeWrite(tx -> {
-                String query = """
-                        MATCH (a:Memory {id: $sourceId})
-                        MATCH (b:Memory {id: $targetId})
-                        MERGE (a)-[r:CAUSAL_LINK {type: $type, confidence: $confidence}]->(b)
-                        """;
-                tx.run(query, org.neo4j.driver.Values.parameters(
-                        "sourceId", link.getSourceMemoryId(),
-                        "targetId", link.getTargetMemoryId(),
-                        "type", link.getRelationType().name(),
-                        "confidence", link.getConfidence()
-                ));
+                tx.run("MATCH (a:Memory {id: $s}) MATCH (b:Memory {id: $t}) MERGE (a)-[:CAUSAL_LINK]->(b)",
+                        Values.parameters("s", link.getSourceMemoryId(), "t", link.getTargetMemoryId()));
                 return null;
             });
+        } catch (Exception e) {
+            log.warn("Neo4j causal link creation failed: {}", e.getMessage());
         }
     }
 
     public List<String> expandByRelations(List<String> seedIds) {
-        // 根据种子节点扩展关联记忆 ID
-        //todo
-        return List.of();
+        if (!isAvailable() || seedIds.isEmpty()) return List.of();
+        try (Session session = neo4jDriver.session()) {
+            return session.readTransaction(tx -> {
+                var result = tx.run(
+                        "MATCH (m:Memory)-[:CAUSAL_LINK]-(other) WHERE m.id IN $ids RETURN DISTINCT other.id AS id",
+                        Values.parameters("ids", seedIds));
+                return result.list(record -> record.get("id").asString());
+            });
+        } catch (Exception e) {
+            log.warn("Neo4j expand relations failed: {}", e.getMessage());
+            return List.of();
+        }
     }
 
     public void deleteMemoryNode(String id) {
+        if (!isAvailable()) return;
         try (Session session = neo4jDriver.session()) {
             session.executeWrite(tx -> {
                 tx.run("MATCH (m:Memory {id: $id}) DETACH DELETE m",
-                        org.neo4j.driver.Values.parameters("id", id));
+                        Values.parameters("id", id));
                 return null;
             });
+        } catch (Exception e) {
+            log.warn("Neo4j delete node failed: {}", e.getMessage());
         }
     }
 }

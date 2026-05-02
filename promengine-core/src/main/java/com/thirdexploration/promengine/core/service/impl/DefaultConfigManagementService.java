@@ -158,6 +158,25 @@ public class DefaultConfigManagementService implements ConfigManagementService {
         );
     }
 
+
+    @Override
+    public void resetToDefault(String userId) {
+        // 1. 记录当前配置快照（用于审计和回滚）
+        String version = String.valueOf(System.currentTimeMillis());
+        ConfigSnapshot snapshot = ConfigSnapshot.builder()
+                .version(version)
+                .timestamp(Instant.now())
+                .config(new HashMap<>(currentConfig))
+                .build();
+        snapshots.add(snapshot);
+        saveSnapshot(snapshot);
+
+        // 2. 重置为默认配置
+        currentConfig.clear();
+        initDefaultConfig();   // 调用已有的默认初始化逻辑
+        log.info("Config reset to default by user {}", userId);
+    }
+
     // ---------- 持久化辅助方法 ----------
     private void loadCurrentConfig() {
         File file = CONFIG_FILE_PATH.toFile();

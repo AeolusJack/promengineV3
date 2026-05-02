@@ -23,10 +23,10 @@ public class CrossDomainFusionEngine {
     }
 
     private FusionMode determineMode(MemoryQuery query) {
-        if (query.getDomains().size() == 1) {
+        List<String> domains = query.getDomains();
+        if (domains.size() == 1) {
             return FusionMode.PARALLEL;
         }
-        // 根据查询特征选择模式
         return FusionMode.AUGMENT;
     }
 

@@ -55,7 +55,10 @@ public class ChromaVectorStorage implements VectorStorage {
         log.warn("Direct vector search not supported. Use text-based search instead.");
         return List.of();
     }
-
+    @Override
+    public List<SearchHit> searchByText(String text, int topK) {
+        return search(text, topK); // 委托给已有的文本搜索方法
+    }
     /**
      * 文本语义搜索 - 推荐使用
      */

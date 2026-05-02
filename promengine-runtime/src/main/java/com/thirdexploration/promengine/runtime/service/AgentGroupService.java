@@ -82,6 +82,12 @@ public class AgentGroupService {
         return groupRepository.findById(id);
     }
 
+    public void triggerNextRound(String groupId) {
+        AgentGroup group = groupRepository.findById(groupId);
+        if (!"active".equals(group.getStatus())) return;
+        agentGroupOrchestrator.executeSingleRound(group);
+    }
+
     /**
      * 创建群聊，群聊创建后需要手动开始
      * @param userId

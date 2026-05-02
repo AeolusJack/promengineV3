@@ -47,6 +47,11 @@ public class NoOpSandboxManager implements SandboxManager {
 
     @Override
     public Path resolve(String relativePath, ToolDefinition.SandboxPolicyDef policy) throws SecurityException {
+        // 策略为 null 时，退化为基本实现
+        if (policy == null) {
+            return resolve(relativePath);
+        }
+        // NoOp 模式下不执行严格策略，但仍可校验路径是否在工作区内
         return resolve(relativePath);
     }
 

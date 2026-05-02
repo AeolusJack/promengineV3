@@ -35,7 +35,10 @@ public interface VectorStorage {
     record VectorRecord(String id, float[] vector, String metadata) {}
     record SearchHit(String id, float score) {}
 
-
+    /** 新增：基于文本的语义搜索，默认返回空，子类可覆盖 */
+    default List<SearchHit> searchByText(String text, int topK) {
+        return List.of();
+    }
 
 
 

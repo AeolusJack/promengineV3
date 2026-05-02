@@ -22,8 +22,10 @@ public class MemoryEntry {
     private String memoryType;
     private float importance;
     private Map<String, Object> metadata;
-    private float strength;
+    private double strength;
     private String layer;
     private String domain;
+    private double utilityScore;
+    private double  safetyScore;
     private String sharingLevel;   // 确保存在
 }

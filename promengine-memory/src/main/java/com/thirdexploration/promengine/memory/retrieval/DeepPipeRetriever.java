@@ -2,100 +2,138 @@ package com.thirdexploration.promengine.memory.retrieval;
 
 import com.thirdexploration.promengine.memory.model.MemoryQuery;
 import com.thirdexploration.promengine.memory.model.MemoryRecord;
-import com.thirdexploration.promengine.memory.storage.*;
-import lombok.RequiredArgsConstructor;
+import com.thirdexploration.promengine.memory.storage.Neo4jGraphService;
+import com.thirdexploration.promengine.memory.storage.SemanticMemoryService;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.collections4.ListUtils;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
- * aeon
- * 深度检索管道，可选 LLM 增强，支持查询重写、意图解析、跨域推理。
+ * 深度检索管道，支持 LLM 查询重写、意图解析、图谱扩展等增强特性。
+ * 仅对语义记忆层生效，其他层回退到 FastPipe。
  */
 @Slf4j
 @Component
-//@RequiredArgsConstructor
 public class DeepPipeRetriever {
 
     private final SemanticMemoryService semanticMemory;
-    private final EmbeddingService embeddingService;
     private final ChatClient.Builder chatClientBuilder;
-    // 非必需依赖，当图谱功能未启用时可以为 null
-    @Autowired(required = false)
-    private  Neo4jGraphService graphService;
     private final FastPipeRetriever fastPipe;
-    // 显式构造器，不包含 graphService
+
+    @Autowired(required = false)
+    private Neo4jGraphService graphService;
+
     public DeepPipeRetriever(SemanticMemoryService semanticMemory,
-                             EmbeddingService embeddingService,
+                             EmbeddingService embeddingService, // 保留以备未来使用，当前不依赖
                              ChatClient.Builder chatClientBuilder,
                              FastPipeRetriever fastPipe) {
         this.semanticMemory = semanticMemory;
-        this.embeddingService = embeddingService;
         this.chatClientBuilder = chatClientBuilder;
         this.fastPipe = fastPipe;
     }
+
+    /**
+     * 根据层级和查询选择检索策略。
+     */
     public List<MemoryRecord> retrieve(String layer, MemoryQuery query, List<String> domains, String pipelineName) {
-        // 对于非语义层，回退到 FastPipe
         if (!"semantic".equals(layer)) {
             return fastPipe.retrieve(layer, query, domains);
         }
         return retrieveSemanticWithEnhancement(query, domains, pipelineName);
     }
 
-    private List<MemoryRecord> retrieveSemanticWithEnhancement(MemoryQuery query, List<String> domains, String pipelineName) {
+    /**
+     * 带增强的语义记忆检索。
+     */
+    private List<MemoryRecord> retrieveSemanticWithEnhancement(MemoryQuery query,
+                                                               List<String> domains,
+                                                               String pipelineName) {
+        String originalQuery = query.getText();
+        if (originalQuery == null || originalQuery.isBlank()) {
+            return List.of();
+        }
+
+        int topK = query.getMaxResults() * 2; // 初始放宽召回量，后续融合和去重
         List<MemoryRecord> allResults = new ArrayList<>();
 
         for (String domain : domains) {
-            // 1. 初始向量检索
-            float[] queryVector = embeddingService.embed( query.getText().length() > 300 ? query.getText().substring(0,300) : query.getText());
-            List<MemoryRecord> vectorResults = semanticMemory.semanticSearch(queryVector, query.getMaxResults() * 2);
+            // 1. 基础文本语义搜索（底层向量存储自行处理 embed 和搜索）
+            List<MemoryRecord> baseResults = semanticMemory.semanticSearch(originalQuery, topK);
+            if (baseResults == null) {
+                baseResults = List.of();
+            } else {
+                // 过滤出当前 domain 的记录（如果 semanticMemory 未按 domain 过滤）
+                baseResults = baseResults.stream()
+                        .filter(r -> domain.equals(r.getDomain()))
+                        .collect(Collectors.toList());
+            }
+            allResults.addAll(baseResults);
 
-            // 2. 如果启用深度增强
+            // 2. LLM 增强：查询重写与扩展
             if ("deep-llm".equals(pipelineName)) {
-                // 查询重写
-                String rewritten = rewriteQueryWithLLM(query.getText());
-                float[] rewrittenVector = embeddingService.embed(rewritten);
-                if (rewrittenVector != null){
-                    List<MemoryRecord> memoryRecords = semanticMemory.semanticSearch(rewrittenVector, query.getMaxResults());
-                    if (memoryRecords != null && !memoryRecords.isEmpty()){
-                        vectorResults.addAll(memoryRecords);
+                String rewritten = rewriteQueryWithLLM(originalQuery);
+                if (!rewritten.equals(originalQuery)) {
+                    List<MemoryRecord> rewrittenResults = semanticMemory.semanticSearch(rewritten, topK);
+                    if (rewrittenResults != null) {
+                        rewrittenResults = rewrittenResults.stream()
+                                .filter(r -> domain.equals(r.getDomain()))
+                                .collect(Collectors.toList());
+                        allResults.addAll(rewrittenResults);
                     }
                 }
-                // 意图解析与扩展（略）
+                // 意图解析与扩展可在此处加入
             }
 
             // 3. 图谱扩展
             if (graphService != null) {
-                List<String> seedIds = vectorResults.stream().map(MemoryRecord::getId).toList();
-                List<String> expandedIds = graphService.expandByRelations(seedIds);
-                List<MemoryRecord> byIds = semanticMemory.findByIds(expandedIds);
-                if (byIds != null && !byIds.isEmpty()){
-                    vectorResults.addAll(byIds);
+                List<String> seedIds = allResults.stream()
+                        .map(MemoryRecord::getId)
+                        .distinct()
+                        .collect(Collectors.toList());
+                if (!seedIds.isEmpty()) {
+                    List<String> expandedIds = graphService.expandByRelations(seedIds);
+                    if (expandedIds != null && !expandedIds.isEmpty()) {
+                        List<MemoryRecord> graphResults = expandedIds.stream()
+                                .map(semanticMemory::findById)
+                                .filter(Objects::nonNull)
+                                .collect(Collectors.toList());
+                        allResults.addAll(graphResults);
+                    }
                 }
             }
-             allResults.addAll(vectorResults);
         }
 
-        // 去重
-        return allResults.stream().distinct().limit(query.getMaxResults()).toList();
+        // 4. 去重、截断
+        return allResults.stream()
+                .distinct()
+                .limit(query.getMaxResults())
+                .collect(Collectors.toList());
     }
 
+    /**
+     * 使用小模型重写查询，使其更适合检索。
+     */
     private String rewriteQueryWithLLM(String original) {
         try {
             ChatClient client = chatClientBuilder.build();
-            return client.prompt()
+            String rewritten = client.prompt()
                     .user("将以下查询重写为更精确的检索关键词，只返回重写后的文本，不要解释：\n" + original)
                     .call()
                     .content();
+            if (rewritten != null && !rewritten.isBlank()) {
+                log.debug("Query rewritten: {} → {}", original, rewritten);
+                return rewritten.trim();
+            }
         } catch (Exception e) {
-            log.warn("LLM query rewrite failed, using original", e);
-            return original;
+            log.warn("LLM query rewrite failed, using original query: {}", e.getMessage());
         }
+        return original;
     }
 }

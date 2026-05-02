@@ -15,6 +15,7 @@ import com.thirdexploration.promengine.prompt.core.PromptContextBuilder;
 import com.thirdexploration.promengine.prompt.core.PromptPipeline;
 import com.thirdexploration.promengine.prompt.model.PromptTemplate;
 
+import com.thirdexploration.promengine.prompt.window.ContextWindowManager;
 import com.thirdexploration.promengine.temporal.SubjectiveTimeService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +40,10 @@ public class DefaultPromptPipeline implements PromptPipeline, PromptContextBuild
     private final TemplateRegistry templateRegistry;
     private final RenderEngine renderEngine;
     private final PromptCompressor compressor;
+
+
+    private final ContextWindowManager windowManager; // 新增
+
 
     @Override
     public PromptContext collect(TaskContext ctx) {
@@ -70,6 +75,12 @@ public class DefaultPromptPipeline implements PromptPipeline, PromptContextBuild
         // 3. 工具描述
         String toolDescriptions = toolInfoProvider.getToolDescriptions();
 
+        // 裁剪记忆
+        List<MemoryEntry> trimmedMemories = windowManager.trimMemories(memories, 4000); // 可配置
+        // 工具描述裁剪
+        String toolsDesc = toolInfoProvider.getToolDescriptions();
+        toolsDesc = windowManager.trimToolsDescription(toolsDesc, 1000);
+
         // 4. 构建 PromptContext
         return PromptContext.builder()
                 .userId(ctx.getUserId())
@@ -77,10 +88,12 @@ public class DefaultPromptPipeline implements PromptPipeline, PromptContextBuild
                 .userInput(ctx.getUserInput().getText())
                 .taskType(ctx.getTaskType())
                 .cognitiveState(cognitiveState)
-                .memories(memories)
+//                .memories(memories)
                 .availableTools(toolInfoProvider.getAvailableToolNames())
-                .toolDescriptions(toolDescriptions)
+//                .toolDescriptions(toolDescriptions)
                 .extraVariables(ctx.getVariables())
+                .memories(trimmedMemories)
+                .toolDescriptions(toolsDesc)
                 .build();
     }
 

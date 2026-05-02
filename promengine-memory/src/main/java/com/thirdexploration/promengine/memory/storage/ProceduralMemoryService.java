@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.thirdexploration.promengine.memory.config.MemoryMetadataRegistry;
 import com.thirdexploration.promengine.memory.config.MetaPolicyStore;
+import com.thirdexploration.promengine.memory.model.MemoryEntry;
 import com.thirdexploration.promengine.memory.model.MemoryRecord;
 import com.thirdexploration.promengine.memory.model.Provenance;
 import lombok.RequiredArgsConstructor;
@@ -134,7 +135,43 @@ public class ProceduralMemoryService {
             return null;
         }
     }
+    public SemanticMemoryService.PageResult<MemoryEntry> findByKeywordAndPage(String keyword, int page, int size) {
+        StringBuilder countSql = new StringBuilder("SELECT COUNT(*) FROM procedural_memory WHERE deleted = 0 ");
+        StringBuilder dataSql = new StringBuilder("SELECT * FROM procedural_memory WHERE deleted = 0 ");
+        List<Object> params = new ArrayList<>();
 
+        if (keyword != null && !keyword.isBlank()) {
+            String like = "%" + keyword + "%";
+            String where = " AND (content LIKE ? OR summary LIKE ?) ";
+            countSql.append(where);
+            dataSql.append(where);
+            params.add(like);
+            params.add(like);
+        }
+
+        long total = jdbcTemplate.queryForObject(countSql.toString(), Long.class, params.toArray());
+        dataSql.append(" ORDER BY timestamp DESC LIMIT ? OFFSET ?");
+        int offset = (page - 1) * size;
+        params.add(size);
+        params.add(offset);
+
+        List<MemoryRecord> records = jdbcTemplate.query(dataSql.toString(), new ProceduralRowMapper(objectMapper), params.toArray());
+        List<MemoryEntry> entries = records.stream().map(r -> MemoryEntry.builder()
+                .id(r.getId())
+                .userId(r.getUserId())
+                .content(r.getContent())
+                .summary(r.getSummary())
+                .timestamp(r.getTimestamp())
+                .memoryType(r.getMemoryType())
+                .importance(r.getImportance())
+                .domain(r.getDomain())
+                .layer(r.getLayer())
+                .strength(r.getStrength())
+                .sharingLevel(r.getSharingLevel())
+                .metadata(r.getMetadata())
+                .build()).toList();
+        return new SemanticMemoryService.PageResult<>(entries, total);
+    }
     public void boostReliability(String id, double increment) {
         MemoryRecord record = findById(id);
         if (record != null) {
@@ -192,8 +229,8 @@ public class ProceduralMemoryService {
                         .projectId(rs.getString("project_id"))
                         .strength(rs.getFloat("strength"))
                         .layer(rs.getString("layer"))
-                        .utilityScore(rs.getDouble("utility_score"))
-                        .safetyScore(rs.getDouble("safety_score"))
+                        .utilityScore(rs.getFloat("utility_score"))
+                        .safetyScore(rs.getFloat("safety_score"))
                         .sharingLevel(rs.getString("sharing_level"))
                         .provenance(provenance)
                         .retrievalCount(rs.getInt("retrieval_count"))

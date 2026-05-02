@@ -8,15 +8,17 @@ import com.thirdexploration.promengine.memory.model.MemoryRecord;
 import com.thirdexploration.promengine.memory.storage.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * aeon
@@ -33,10 +35,18 @@ public class EnhancedRetrievalOrchestrator {
     private final ProceduralMemoryService proceduralMemory;
     private final CollectiveMemoryService collectiveMemory;
 
+    private final EmbeddingService embeddingService; // 新增字段
+    private final Neo4jGraphService graphService;
+
+    private final LuceneIndexService luceneIndexService;
+
     private final DualCoreRouter dualCoreRouter;
     private final CrossDomainFusionEngine fusionEngine;
     private final AeonMemoryProperties properties;
     private final MemoryMetadataRegistry registry;
+
+
+
 
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
@@ -85,7 +95,8 @@ public class EnhancedRetrievalOrchestrator {
      */
     private List<String> determineLayers(MemoryQuery query) {
         List<String> layers = new ArrayList<>();
-        if (query.isIncludeWorking() && !query.getSessionId().isEmpty()) {
+        // 仅当 sessionId 非空时才检索工作记忆
+        if (query.isIncludeWorking() && query.getSessionId() != null && !query.getSessionId().isEmpty()) {
             layers.add("working");
         }
         if (query.isIncludeEpisodic()) {
@@ -144,5 +155,109 @@ public class EnhancedRetrievalOrchestrator {
                 .distinct()
                 .limit(maxResults)
                 .toList();
+    }
+
+    // EnhancedRetrievalOrchestrator.java
+
+    public Map<String, Object> debugRetrieve(MemoryQuery query) {
+        long start = System.currentTimeMillis();
+        List<String> domains = query.getAllDomains();
+        String userId = query.getUserId();
+        String sessionId = query.getSessionId();
+        int maxResults = query.getMaxResults();
+
+//        // 1. 热存储 = 情景记忆（按时间范围查询，同分层浏览使用的途径）
+//        List<MemoryRecord> hotHits = new ArrayList<>();
+//        if (query.isIncludeEpisodic()) {
+//            Instant from = Instant.now().minus(3650, ChronoUnit.DAYS); // 10年范围
+//            Instant to = Instant.now();
+//            for (String domain : domains) {
+//                hotHits.addAll(episodicMemory.queryByTimeRange(
+//                        userId, domain, sessionId, from, to, maxResults));
+//            }
+//        }
+//        // 可选：也包含工作记忆（如果 sessionId 不为空）
+//        if (query.isIncludeWorking() && sessionId != null && !sessionId.isEmpty()) {
+//            hotHits.addAll(workingMemory.queryBySession(sessionId, query.getText(), maxResults));
+//        }
+        // 1. 工作记忆（真正的热存储）- 目前仅在有 sessionId 时尝试获取
+        List<MemoryRecord> workingHits = new ArrayList<>();
+        if (sessionId != null && !sessionId.isEmpty() && query.isIncludeWorking()) {
+            workingHits = workingMemory.queryBySession(sessionId, query.getText(), maxResults);
+        }
+
+        // 2. 情景记忆（按时间范围查询）
+        List<MemoryRecord> episodicHits = new ArrayList<>();
+        if (query.isIncludeEpisodic()) {
+            Instant from = Instant.now().minus(3650, ChronoUnit.DAYS);
+            Instant to = Instant.now();
+            for (String domain : domains) {
+                episodicHits.addAll(episodicMemory.queryByTimeRange(
+                        userId, domain, sessionId, from, to, maxResults));
+            }
+        }
+
+
+        // 2. Lucene 全文检索（可能为空）
+        List<MemoryRecord> luceneHits = new ArrayList<>();
+        if (query.getText() != null && !query.getText().isBlank()) {
+            List<String> luceneIds = luceneIndexService.searchEpisodic(query.getText(), maxResults);
+            luceneHits = luceneIds.stream()
+                    .map(episodicMemory::findById)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+        }
+
+        // 3. 向量检索（文本语义搜索）
+        List<MemoryRecord> vectorHits = new ArrayList<>();
+        if (query.getText() != null && !query.getText().isBlank()) {
+            vectorHits = semanticMemory.semanticSearch(query.getText(), maxResults);
+        }
+
+        // 4. 图谱扩展（基于 Lucene 种子）
+        List<MemoryRecord> graphHits = new ArrayList<>();
+        if (graphService != null && !luceneHits.isEmpty()) {
+            List<String> seedIds = luceneHits.stream().map(MemoryRecord::getId).collect(Collectors.toList());
+            List<String> expandedIds = graphService.expandByRelations(seedIds);
+            if (expandedIds != null && !expandedIds.isEmpty()) {
+                graphHits = expandedIds.stream()
+                        .map(semanticMemory::findById)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toList());
+            }
+        }
+
+        // 合并所有通路用于融合（现在包含工作记忆和情景记忆）
+        List<MemoryRecord> all = new ArrayList<>();
+        all.addAll(workingHits);
+        all.addAll(episodicHits);
+        all.addAll(luceneHits);
+        all.addAll(vectorHits);
+        all.addAll(graphHits);
+        List<MemoryRecord> fused = fusionEngine.fuse(all.stream().distinct().collect(Collectors.toList()), query);
+
+        long took = System.currentTimeMillis() - start;
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("workingHits", toEntryList(workingHits));
+        result.put("episodicHits", toEntryList(episodicHits));
+        result.put("luceneHits", toEntryList(luceneHits));
+        result.put("vectorHits", toEntryList(vectorHits));
+        result.put("graphHits", toEntryList(graphHits));
+        result.put("fusedHits", toEntryList(fused));
+        result.put("tookMs", took);
+        return result;
+    }
+
+
+
+
+    private List<Map<String, Object>> toEntryList(List<MemoryRecord> records) {
+        return records.stream().map(r -> {
+            Map<String, Object> map = new LinkedHashMap<>(r.toMemoryEntryAsMap()); // 需在 MemoryEntry 中添加 toMap
+            map.put("_score", r.getStrength()); // 临时使用 strength 作为分数
+            map.put("_source", r.getLayer());
+            return map;
+        }).toList();
     }
 }

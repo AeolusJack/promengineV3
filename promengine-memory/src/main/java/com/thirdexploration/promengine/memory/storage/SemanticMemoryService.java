@@ -17,10 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 @Slf4j
 @Service
@@ -44,6 +41,21 @@ public class SemanticMemoryService {
         this.registry = registry;
         this.vectorStorage = vectorStorage;
     }
+
+    public List<MemoryRecord> semanticSearch(String queryText, int topK) {
+        if (vectorStorage == null) return List.of();
+        List<VectorStorage.SearchHit> hits = vectorStorage.searchByText(queryText, topK);
+        return hits.stream()
+                .map(hit -> findById(hit.id()))
+                .filter(Objects::nonNull)
+                .toList();
+    }
+    public void updateScores(String id, double utilityScore, double safetyScore) {
+        String sql = "UPDATE semantic_memory SET utility_score = ?, safety_score = ? WHERE id = ?";
+        jdbcTemplate.update(sql, utilityScore, safetyScore, id);
+        log.debug("Updated scores for semantic memory: id={}", id);
+    }
+
     private static final String INSERT_SQL = """
             INSERT INTO semantic_memory
             (id, user_id, content, summary, timestamp, memory_type, importance,
@@ -287,8 +299,8 @@ public class SemanticMemoryService {
                         .projectId(rs.getString("project_id"))
                         .strength(rs.getFloat("strength"))
                         .layer(rs.getString("layer"))
-                        .utilityScore(rs.getDouble("utility_score"))
-                        .safetyScore(rs.getDouble("safety_score"))
+                        .utilityScore(rs.getFloat("utility_score"))
+                        .safetyScore(rs.getFloat("safety_score"))
                         .sharingLevel(rs.getString("sharing_level"))
                         .provenance(provenance)
                         .retrievalCount(rs.getInt("retrieval_count"))

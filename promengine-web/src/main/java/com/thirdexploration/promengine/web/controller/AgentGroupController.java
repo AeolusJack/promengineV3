@@ -50,4 +50,15 @@ public class AgentGroupController {
         groupService.stopDiscussion(id);
         return ApiResponse.ok(null);
     }
+
+    @PostMapping("/{id}/next")
+    public ApiResponse<Void> nextRound(@PathVariable String id) {
+        AgentGroup group = groupService.getGroup(null, id); // getGroup 需要 user，可改为直接查
+        if (group != null && "stopped".equals(group.getStatus())) {
+            groupService.startDiscussion(id); // 如果已停止，则启动
+        } else {
+            groupService.triggerNextRound(id);
+        }
+        return ApiResponse.ok(null);
+    }
 }

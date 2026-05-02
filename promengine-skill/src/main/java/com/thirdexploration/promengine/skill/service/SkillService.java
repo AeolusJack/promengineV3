@@ -115,4 +115,8 @@ public class SkillService {
         }
         return map;
     }
+
+    public SkillRecord findById(String id) {
+        return skillRepository.findById(id);
+    }
 }

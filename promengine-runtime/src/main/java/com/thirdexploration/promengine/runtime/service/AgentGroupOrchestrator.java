@@ -45,4 +45,16 @@ public class AgentGroupOrchestrator {
         }
         group.setStatus("completed");
     }
+
+    public void executeSingleRound(AgentGroup group) {
+        for (GroupAgent ga : group.getAgents()) {
+            try {
+                String msg = messageGenerator.generateMessage(group, ga);
+                groupMessageRepo.saveGroupMessage(group.getId(), "agent",
+                        ga.getAgentId(), ga.getName(), ga.getAvatar(), msg);
+            } catch (Exception e) {
+                log.error("Error generating message for agent {}", ga.getAgentId(), e);
+            }
+        }
+    }
 }

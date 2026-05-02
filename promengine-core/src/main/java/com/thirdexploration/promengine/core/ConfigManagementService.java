@@ -36,4 +36,6 @@ public interface ConfigManagementService {
      * 获取所有配置项的元数据（用于前端动态表单生成）。
      */
     List<ConfigFieldMeta> getConfigMetadata();
+
+    void resetToDefault(String userId);
 }

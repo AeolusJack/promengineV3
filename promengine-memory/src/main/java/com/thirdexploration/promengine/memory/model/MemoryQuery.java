@@ -109,7 +109,15 @@ public class MemoryQuery {
     }
 
     /**
-     * 获取所有查询域
+     * 获取多域查询列表，确保永不返回 null。
+     */
+    public List<String> getDomains() {
+        return domains != null ? domains : List.of();
+    }
+
+    /**
+     * 获取所有查询域，确保永不返回 null。
+     * 如果 domains 有值则返回 domains，否则回退到 domain 字段，再回退到 "general"。
      */
     public List<String> getAllDomains() {
         if (domains != null && !domains.isEmpty()) {

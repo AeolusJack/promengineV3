@@ -75,4 +75,30 @@ public class ToolController {
                 .toList();
         return ApiResponse.ok(names);
     }
+
+
+    @PatchMapping("/{name}/toggle")
+    public ApiResponse<Void> toggleTool(@PathVariable String name,
+                                        @RequestBody Map<String, Object> body) {
+        boolean enabled = (Boolean) body.get("enabled");
+        toolRegistry.resolve(name, null).ifPresent(reg -> {
+            reg.definition().setEnabled(enabled);
+            // 刷新缓存回调列表
+            toolRegistry.refreshCachedCallbacks(); // 需在 ToolRegistry 中添加 public 方法
+        });
+        return ApiResponse.ok(null);
+    }
+
+    @PostMapping("/{name}/test")
+    public ApiResponse<Map<String, Object>> testTool(@PathVariable String name,
+                                                     @RequestBody Map<String, Object> params) {
+        var resolved = toolRegistry.resolve(name, null);
+        if (resolved.isEmpty()) return ApiResponse.error("Tool not found");
+        try {
+            String result = resolved.get().invoker().invoke(params);
+            return ApiResponse.ok(Map.of("result", result));
+        } catch (Exception e) {
+            return ApiResponse.error("Execution failed: " + e.getMessage());
+        }
+    }
 }

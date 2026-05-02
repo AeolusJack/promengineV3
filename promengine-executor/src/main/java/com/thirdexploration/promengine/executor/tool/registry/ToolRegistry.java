@@ -80,7 +80,7 @@ public class ToolRegistry implements ToolInfoProvider {
         }
     }
 
-    private void refreshCachedCallbacks() {
+    public void refreshCachedCallbacks() {
         List<ToolCallback> callbacks = new ArrayList<>();
         for (String name : tools.keySet()) {
             // resolve 已保证每个名称只返回当前激活版本
