@@ -1,5 +1,6 @@
 package com.thirdexploration.promengine.web.controller;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.thirdexploration.promengine.ecosystem.mcp.McpClientService;
 import com.thirdexploration.promengine.ecosystem.mcp.McpServerRecord;
 import com.thirdexploration.promengine.runtime.dto.ApiResponse;
@@ -22,7 +23,7 @@ public class MCPController {
     }
 
     @PostMapping("/servers")
-    public ApiResponse<Map<String, Object>> addServer(@RequestBody Map<String, String> body) {
+    public ApiResponse<Map<String, Object>> addServer(@RequestBody Map<String, String> body) throws JsonProcessingException {
         String name = body.get("name");
         String url = body.get("url");
         if (name == null || url == null) {

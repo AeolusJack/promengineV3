@@ -102,6 +102,31 @@ promengine:
       groupState:
         max-size: 1000
         ttl-seconds: 1800
+  ecosystem:
+    jin10:
+      enabled: true
+      server-url: https://mcp.jin10.com/mcp
+      api-key: sk-XKP95GTkdSxeiMzfTwYzKyiRzechIbi5lAzpsJKOqs0
+      timeout: 30
+      protocol-version: "2025-11-25"
+
+  mcp:
+    builtin-servers:
+      - id: jin10
+        name: 金十数据
+        url: https://mcp.jin10.com/mcp
+        enabled: true
+        transport: sse
+        auth-token: sk-XKP95GTkdSxeiMzfTwYzKyiRzechIbi5lAzpsJKOqs0
+        headers:
+          Content-Type: application/json
+          MCP-Protocol-Version: "2025-11-25"
+      # 可继续添加其他 MCP 服务器
+      # - id: filesystem
+      #   name: 本地文件系统
+      #   transport: stdio
+      #   command: npx
+      #   args: "-y,@modelcontextprotocol/server-filesystem /tmp"
 # -------------------------------------------------
 # Aeon 记忆系统配置
 # -------------------------------------------------
