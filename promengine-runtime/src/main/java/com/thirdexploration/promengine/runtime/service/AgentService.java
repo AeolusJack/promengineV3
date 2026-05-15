@@ -103,6 +103,21 @@ public class AgentService {
         return toMap(r);
     }
 
+    /**
+     * 根据 ID 直接获取 AgentRecord 对象，不检查权限。
+     * 供内部调用（如 ChatController 需要完整 Agent 配置）。
+     * @param id Agent ID
+     * @return AgentRecord 或 null（如果不存在）
+     */
+    public AgentRecord getAgentRecord(String id) {
+        try {
+            return agentRepository.findById(id);
+        } catch (Exception e) {
+            // 捕获可能的 EmptyResultDataAccessException，返回 null
+            return null;
+        }
+    }
+
     private Map<String, Object> toMap(AgentRecord r) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", r.getId());

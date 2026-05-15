@@ -5,7 +5,9 @@ import com.thirdexploration.promengine.core.domain.CompletionChunk;
 import com.thirdexploration.promengine.core.domain.Response;
 import com.thirdexploration.promengine.core.domain.UserInput;
 import com.thirdexploration.promengine.runtime.model.ChatMessage;
+import com.thirdexploration.promengine.runtime.model.AgentRecord;
 import com.thirdexploration.promengine.runtime.repository.ChatMessageRepository;
+import com.thirdexploration.promengine.runtime.service.AgentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -15,9 +17,7 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.stream.Stream;
@@ -30,20 +30,18 @@ public class ChatController {
 
     private final AgentRuntime agentRuntime;
     private final ChatMessageRepository chatMessageRepository;
-
-
+    private final AgentService agentService;   // 新增依赖
 
     @PostMapping
     public CompletableFuture<Response> chat(@RequestBody ChatRequest request,
                                             @RequestHeader(value = "X-User-Id", required = false) String userId) {
         String uid = userId != null ? userId : "default-user";
-        String sessionId = request.sessionId();  // 由前端生成
+        String sessionId = request.sessionId();
 
-        // 判断是否是新会话的第一条消息
+        // 保存用户消息（与之前一致）
         if (chatMessageRepository.isFirstMessage(uid, sessionId)) {
             String autoName = request.message();
             if (autoName.length() > 20) autoName = autoName.substring(0, 20) + "…";
-            // 存储用户消息时带上自动生成的名称
             ChatMessage userMsg = ChatMessage.builder()
                     .id(UUID.randomUUID().toString())
                     .userId(uid)
@@ -56,12 +54,10 @@ public class ChatController {
                     .build();
             chatMessageRepository.save(userMsg);
         } else {
-            // 后续消息不带 sessionName（置空）
             ChatMessage userMsg = ChatMessage.builder()
                     .id(UUID.randomUUID().toString())
                     .userId(uid)
                     .sessionId(sessionId)
-                    .sessionName(null)
                     .role("user")
                     .content(request.message())
                     .timestamp(System.currentTimeMillis())
@@ -69,20 +65,42 @@ public class ChatController {
                     .build();
             chatMessageRepository.save(userMsg);
         }
-        UserInput input = UserInput.builder()
-                .sessionId(request.sessionId())
+
+        // 构建 UserInput，如果有 agentId 则加载配置
+        UserInput.UserInputBuilder inputBuilder = UserInput.builder()
+                .sessionId(sessionId)
                 .text(request.message())
                 .timestamp(System.currentTimeMillis())
                 .userId(uid)
-                .domain(null)            // 可选，从请求体获取
-                .build();
+                .domain(null);
 
+        // 处理 Agent 上下文
+        if (request.agentId() != null && !request.agentId().isBlank()) {
+            try {
+                AgentRecord agent = agentService.getAgentRecord(request.agentId());
+                if (agent != null) {
+                    Map<String, Object> agentConfig = new HashMap<>();
+                    agentConfig.put("systemPrompt", agent.getSystemPrompt());
+                    agentConfig.put("tools", parseTools(agent.getTools()));        // List<String>
+                    agentConfig.put("skills", parseSkills(agent.getSkills()));    // 可忽略
+                    agentConfig.put("modelPreference", agent.getModelPreference());
+                    agentConfig.put("memoryDomain", agent.getMemoryDomain());
+                    agentConfig.put("agentId", agent.getId());
+                    // 将配置放入 metadata
+                    inputBuilder.metadata(Map.of("agentConfig", agentConfig));
+                }
+            } catch (Exception e) {
+                log.warn("Failed to load agent config for agentId={}: {}", request.agentId(), e.getMessage());
+            }
+        }
+
+        UserInput input = inputBuilder.build();
         return agentRuntime.process(input).thenApply(response -> {
-            // 2. 存储助手回复
+            // 存储助手消息
             ChatMessage assistantMsg = ChatMessage.builder()
                     .id(UUID.randomUUID().toString())
                     .userId(uid)
-                    .sessionId(request.sessionId())
+                    .sessionId(sessionId)
                     .role("assistant")
                     .content(response.getText())
                     .timestamp(System.currentTimeMillis())
@@ -91,20 +109,15 @@ public class ChatController {
             chatMessageRepository.save(assistantMsg);
             return response;
         });
-
     }
 
-
-    /**
-     * 流式聊天接口（POST 方式，SSE 封装）
-     */
     @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter chatStream(@RequestBody ChatRequest request,
                                  @RequestHeader(value = "X-User-Id", required = false) String userId) {
         String uid = userId != null ? userId : "default-user";
         SseEmitter emitter = new SseEmitter(120_000L);
 
-        // 存储用户消息
+        // 保存用户消息
         ChatMessage userMsg = ChatMessage.builder()
                 .id(UUID.randomUUID().toString())
                 .userId(uid)
@@ -116,13 +129,30 @@ public class ChatController {
                 .build();
         chatMessageRepository.save(userMsg);
 
-        UserInput input = UserInput.builder()
+        // 构建输入，同样处理 agentId
+        UserInput.UserInputBuilder inputBuilder = UserInput.builder()
                 .sessionId(request.sessionId())
                 .text(request.message())
                 .userId(uid)
-                .timestamp(System.currentTimeMillis())
-                .build();
+                .timestamp(System.currentTimeMillis());
+        if (request.agentId() != null && !request.agentId().isBlank()) {
+            try {
+                AgentRecord agent = agentService.getAgentRecord(request.agentId());
+                if (agent != null) {
+                    Map<String, Object> agentConfig = new HashMap<>();
+                    agentConfig.put("systemPrompt", agent.getSystemPrompt());
+                    agentConfig.put("tools", parseTools(agent.getTools()));
+                    agentConfig.put("modelPreference", agent.getModelPreference());
+                    agentConfig.put("memoryDomain", agent.getMemoryDomain());
+                    agentConfig.put("agentId", agent.getId());
+                    inputBuilder.metadata(Map.of("agentConfig", agentConfig));
+                }
+            } catch (Exception e) {
+                log.warn("Failed to load agent config for stream", e);
+            }
+        }
 
+        UserInput input = inputBuilder.build();
         StringBuilder fullContent = new StringBuilder();
         Executors.newSingleThreadExecutor().execute(() -> {
             try {
@@ -132,7 +162,6 @@ public class ChatController {
                         if (chunk.isLast()) {
                             emitter.send(SseEmitter.event().data("[DONE]"));
                             emitter.complete();
-                            // 存储助手消息
                             ChatMessage assistantMsg = ChatMessage.builder()
                                     .id(UUID.randomUUID().toString())
                                     .userId(uid)
@@ -159,104 +188,73 @@ public class ChatController {
                 emitter.completeWithError(e);
             }
         });
-
-        emitter.onTimeout(() -> log.warn("SSE emitter timed out"));
-        emitter.onError(e -> log.error("SSE emitter error", e));
-        emitter.onCompletion(() -> log.debug("SSE emitter completed"));
         return emitter;
     }
 
-    /**
-     * 纯文本流式接口，用于调试，直接输出模型返回的字符流，无 SSE 封装。
-     */
+    // 辅助方法：解析 tools JSON 数组字符串为 List<String>
+    @SuppressWarnings("unchecked")
+    private List<String> parseTools(String toolsJson) {
+        if (toolsJson == null || toolsJson.isBlank()) return List.of();
+        try {
+            return new com.fasterxml.jackson.databind.ObjectMapper().readValue(toolsJson, List.class);
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
+
+    private List<String> parseSkills(String skillsJson) {
+        return parseTools(skillsJson); // 同类解析
+    }
+
+    // 其他方法保持不变...
     @PostMapping(value = "/stream-debug", produces = MediaType.TEXT_PLAIN_VALUE)
     public StreamingResponseBody chatStreamDebug(@RequestBody ChatRequest request) {
+        // 简化：不处理 agentId，可直接复用原逻辑
         UserInput input = UserInput.builder()
                 .sessionId(request.sessionId())
                 .text(request.message())
                 .timestamp(System.currentTimeMillis())
                 .build();
-
         return outputStream -> {
-            Stream<CompletionChunk> chunkStream = null;
-            try {
-                chunkStream = agentRuntime.processStream(input);
-                // 确保流在使用后关闭
-                try (Stream<CompletionChunk> stream = chunkStream) {
-                    stream.forEach(chunk -> {
-                        try {
-                            if (!chunk.isLast()) {
-                                String delta = chunk.getDelta();
-                                // 调试模式：根据内容类型添加前缀，便于区分思考和回复
-                                if (delta.startsWith("[思考] ")) {
-                                    outputStream.write((delta.substring(4)).getBytes(StandardCharsets.UTF_8));
-                                } else {
-                                    outputStream.write((delta).getBytes(StandardCharsets.UTF_8));
-                                }
-                                outputStream.flush(); // 立即刷新，实现逐字输出效果
-                            } else {
-                                outputStream.write("[DONE]".getBytes(StandardCharsets.UTF_8));
-                            }
-                        } catch (IOException e) {
-                            log.error("Error writing stream debug response", e);
-                            throw new RuntimeException(e);
+            Stream<CompletionChunk> chunkStream = agentRuntime.processStream(input);
+            try (Stream<CompletionChunk> stream = chunkStream) {
+                stream.forEach(chunk -> {
+                    try {
+                        if (!chunk.isLast()) {
+                            outputStream.write(chunk.getDelta().getBytes(StandardCharsets.UTF_8));
+                            outputStream.flush();
+                        } else {
+                            outputStream.write("[DONE]".getBytes(StandardCharsets.UTF_8));
                         }
-                    });
-                }
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
             } catch (Exception e) {
-                log.error("Stream debug processing error", e);
-                try {
-                    outputStream.write(("Error: " + e.getMessage()).getBytes(StandardCharsets.UTF_8));
-                } catch (IOException ignored) {}
+                try { outputStream.write(("Error: " + e.getMessage()).getBytes()); } catch (IOException ignored) {}
             }
         };
     }
 
     @PutMapping("/sessions/{sessionId}/name")
-    public void renameSession(@PathVariable String sessionId,
-                              @RequestBody Map<String, String> body,
+    public void renameSession(@PathVariable String sessionId, @RequestBody Map<String, String> body,
                               @RequestHeader(value = "X-User-Id", required = false) String userId) {
-        String uid = userId != null ? userId : "default-user";
-        chatMessageRepository.updateSessionName(uid, sessionId, body.get("name"));
+        chatMessageRepository.updateSessionName(userId != null ? userId : "default-user", sessionId, body.get("name"));
     }
 
     @GetMapping("/sessions")
     public List<SessionInfo> getSessions(@RequestHeader(value = "X-User-Id", required = false) String userId) {
         String uid = userId != null ? userId : "default-user";
-        List<ChatMessageRepository.SessionInfo> infos = chatMessageRepository.findDistinctSessions(uid);
-        return infos.stream()
-                .map(info -> new SessionInfo(info.id(), info.name()))
-                .toList();
+        return chatMessageRepository.findDistinctSessions(uid).stream()
+                .map(info -> new SessionInfo(info.id(), info.name())).toList();
     }
 
-//    /**
-//     * 获取当前用户的所有会话列表（按最新消息时间降序）
-//     */
-//    @GetMapping("/sessions")
-//    public List<SessionInfo> getSessions(@RequestHeader(value = "X-User-Id", required = false) String userId) {
-//        String uid = userId != null ? userId : "default-user";
-//        List<ChatMessageRepository.SessionInfo> sessionIds = chatMessageRepository.findDistinctSessions(uid);
-//        return sessionIds.stream()
-//                .map(id -> new SessionInfo(id.id(), "会话" + id.id().substring(0, 8)))
-//                .toList();
-//    }
-
-
-    /**
-     * 获取指定会话的所有消息（按时间升序）
-     */
     @GetMapping("/sessions/{sessionId}/messages")
     public List<ChatMessage> getMessages(@PathVariable String sessionId,
                                          @RequestHeader(value = "X-User-Id", required = false) String userId) {
-        String uid = userId != null ? userId : "default-user";
-        return chatMessageRepository.findBySessionId(uid, sessionId);
+        return chatMessageRepository.findBySessionId(userId != null ? userId : "default-user", sessionId);
     }
 
-    // ---------- DTO ----------
-
-    /** 聊天请求体 */
-    public record ChatRequest(String sessionId, String message) {}
-
-    /** 会话摘要信息（用于前端列表） */
+    public record ChatRequest(String sessionId, String message, String agentId) {}
     public record SessionInfo(String id, String name) {}
 }

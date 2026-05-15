@@ -62,18 +62,23 @@ public class ExecutionContext {
     /**
      * 便捷构造方法：基于 UserInput 创建默认上下文。
      *
-     * @param userInput 用户输入
+     * @param input 用户输入
      * @return 初始化的 ExecutionContext
      */
-    public static ExecutionContext of(UserInput userInput) {
-        return ExecutionContext.builder()
+    public static ExecutionContext of(UserInput input) {
+        ExecutionContext ctx = ExecutionContext.builder()
                 .executionId(generateExecutionId())
-                .sessionId(userInput.getSessionId())
-                .userId(extractUserId(userInput))
-                .userInput(userInput)
+                .sessionId(input.getSessionId())
+                .userId(input.getUserId())
+                .userInput(input)
                 .startTime(Instant.now())
                 .status(ExecutionStatus.CREATED)
                 .build();
+        // 合并 metadata 到 attributes
+        if (input.getMetadata() != null) {
+            ctx.getAttributes().putAll(input.getMetadata());
+        }
+        return ctx;
     }
 
     /**

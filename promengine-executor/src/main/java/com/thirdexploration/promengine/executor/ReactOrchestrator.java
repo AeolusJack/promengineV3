@@ -99,17 +99,34 @@ public class ReactOrchestrator implements Orchestrator {
 
     @Override
     public CompletableFuture<Response> execute(ExecutionContext ctx) {
+
+        // 从上下文获取 Agent 专属配置
+        @SuppressWarnings("unchecked")
+        Map<String, Object> agentConfig = (Map<String, Object>) ctx.getAttribute("agentConfig", Map.class);
+        String systemPromptOverride = null;
+        List<String> allowedTools = null;
+        String memoryDomain = "general";
+        if (agentConfig != null) {
+            systemPromptOverride = (String) agentConfig.get("systemPrompt");
+            allowedTools = (List<String>) agentConfig.get("tools");
+            memoryDomain = (String) agentConfig.getOrDefault("memoryDomain", "general");
+        }
         log.info("ReactOrchestrator (M7) started for session: {}", ctx.getUserInput().getSessionId());
         long startTime = System.currentTimeMillis();
 
         // 1. 通过管线构建系统提示词
-        TaskContext taskCtx = ctx.toTaskContext();
-        taskCtx.setTaskType("react_conversation");
-        PromptContext context = promptPipeline.collect(taskCtx);
-        context.setAvailableTools(toolExecutor.getAvailableToolNames());
-        context.setToolDescriptions(toolExecutor.getToolDescriptions());
-        String systemPrompt = promptPipeline.render(context);
-        systemPrompt = promptPipeline.compress(systemPrompt);
+        String systemPrompt;
+        if (systemPromptOverride != null && !systemPromptOverride.isBlank()) {
+            systemPrompt = systemPromptOverride;
+        } else {
+            TaskContext taskCtx = ctx.toTaskContext();
+            taskCtx.setTaskType("react_conversation");
+            PromptContext context = promptPipeline.collect(taskCtx);
+            context.setAvailableTools(toolExecutor.getAvailableToolNames());
+            context.setToolDescriptions(toolExecutor.getToolDescriptions());
+            systemPrompt = promptPipeline.render(context);
+            systemPrompt = promptPipeline.compress(systemPrompt);
+        }
 
         // 2. 构建初始对话
         List<Message> conversation = new ArrayList<>();
@@ -127,8 +144,13 @@ public class ReactOrchestrator implements Orchestrator {
             step++;
             log.info("========== ReAct 第 {} 轮开始 ==========", step);
             logReActStep(step, conversation);
-
             ToolCallback[] tools = getToolCallbacks();
+            if (allowedTools != null && !allowedTools.isEmpty()) {
+                Set<String> allowedSet = new HashSet<>(allowedTools);
+                tools = Arrays.stream(tools)
+                        .filter(tc -> allowedSet.contains(tc.getName()))
+                        .toArray(ToolCallback[]::new);
+            }
             ChatResponse response = callLLMWithRetry(chatClient, conversation, tools, step);
             if (response == null) {
                 finalAnswer = "抱歉，模型调用出现异常，请稍后重试。";
