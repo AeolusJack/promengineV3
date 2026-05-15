@@ -57,6 +57,7 @@
     <module>promengine-runtime</module>
     <module>promengine-web</module>
     <module>promengine-spring-boot-starter</module>
+      <module>promengine-agent</module>
 
   </modules>
   <dependencies>

@@ -209,7 +209,7 @@ public class EpisodicMemoryService {
      * 按时间范围查询，支持 sessionId 过滤（若提供）
      */
     public List<MemoryRecord> queryByTimeRange(String userId, String domain, String sessionId,
-                                               Instant from, Instant to, int limit) {
+                                               Instant from, Instant to, int limit, String projectId) {
         StringBuilder sql = new StringBuilder(SELECT_BY_TIME_RANGE);
         List<Object> params = new ArrayList<>();
         params.add(userId);
@@ -221,6 +221,12 @@ public class EpisodicMemoryService {
             sql.append(" AND session_id = ?");
             params.add(sessionId);
         }
+
+        if (projectId != null && !projectId.isEmpty()) {
+            sql.append(" AND project_id = ?");
+            params.add(projectId);
+        }
+
         sql.append(" ORDER BY strength DESC, timestamp DESC LIMIT ?");
         params.add(limit);
 
@@ -230,8 +236,8 @@ public class EpisodicMemoryService {
     /**
      * 兼容旧接口（无 sessionId）
      */
-    public List<MemoryRecord> queryByTimeRange(String userId, String domain, Instant from, Instant to, int limit) {
-        return queryByTimeRange(userId, domain, null, from, to, limit);
+    public List<MemoryRecord> queryByTimeRange(String userId, String domain, Instant from, Instant to, int limit, String projectId) {
+        return queryByTimeRange(userId, domain, null, from, to, limit,  projectId);
     }
 
     public MemoryRecord findById(String id) {

@@ -49,7 +49,7 @@ public class FastPipeRetriever {
 
         for (String domain : domains) {
             List<MemoryRecord> domainResults = episodicMemory.queryByTimeRange(
-                    query.getUserId(), domain, from, to, query.getMaxResults());
+                    query.getUserId(), domain, from, to, query.getMaxResults() , query.getProjectId());
             results.addAll(domainResults);
         }
 

@@ -132,6 +132,7 @@ public class EnhancedRetrievalOrchestrator {
                         from,
                         to,
                         query.getMaxResults()
+                        ,query.getProjectId()
                 ));
             }
             return results;
@@ -165,7 +166,7 @@ public class EnhancedRetrievalOrchestrator {
         String userId = query.getUserId();
         String sessionId = query.getSessionId();
         int maxResults = query.getMaxResults();
-
+        String projectId = query.getProjectId();
 //        // 1. 热存储 = 情景记忆（按时间范围查询，同分层浏览使用的途径）
 //        List<MemoryRecord> hotHits = new ArrayList<>();
 //        if (query.isIncludeEpisodic()) {
@@ -193,7 +194,7 @@ public class EnhancedRetrievalOrchestrator {
             Instant to = Instant.now();
             for (String domain : domains) {
                 episodicHits.addAll(episodicMemory.queryByTimeRange(
-                        userId, domain, sessionId, from, to, maxResults));
+                        userId, domain, sessionId, from, to, maxResults,projectId));
             }
         }
 

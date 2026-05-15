@@ -20,7 +20,11 @@ public class ToolDefinition {
     private boolean enabled;
     private List<ParameterDef> parameters;
     private SandboxPolicyDef sandboxPolicy;
+    //  追加字段
+    private RiskLevel riskLevel = RiskLevel.LOW;
+    private List<String> requiredPermissions = List.of();
 
+    public enum RiskLevel { LOW, MEDIUM, HIGH }
     @Data
     @Builder
     public static class ParameterDef {

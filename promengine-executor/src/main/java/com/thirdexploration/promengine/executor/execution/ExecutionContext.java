@@ -78,6 +78,7 @@ public class ExecutionContext {
         if (input.getMetadata() != null) {
             ctx.getAttributes().putAll(input.getMetadata());
         }
+
         return ctx;
     }
 

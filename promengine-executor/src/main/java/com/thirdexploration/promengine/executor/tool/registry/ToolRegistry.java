@@ -2,8 +2,11 @@ package com.thirdexploration.promengine.executor.tool.registry;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.thirdexploration.promengine.core.AgentConfig;
 import com.thirdexploration.promengine.core.ToolInfoProvider;
+import com.thirdexploration.promengine.core.agent.AgentConfigProvider;
 import lombok.Data;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.ToolCallback;
@@ -17,6 +20,7 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 
+@RequiredArgsConstructor
 @Slf4j
 @Component
 public class ToolRegistry implements ToolInfoProvider {
@@ -33,6 +37,23 @@ public class ToolRegistry implements ToolInfoProvider {
 
     // 记录每个 MCP 服务器注册的工具全名，用于批量移除
     private final Map<String, Set<String>> mcpServerTools = new ConcurrentHashMap<>();
+
+    // ★ 新增字段：用于获取 Agent 配置（通过构造注入）
+    private final AgentConfigProvider agentConfigProvider;
+
+    // ★ 新增方法：根据 Agent 配置过滤工具
+    public List<ToolCallback> getToolsForAgent(String agentId) {
+        if (agentId == null || agentId.isBlank()) {
+            return getAllToolCallbacks();
+        }
+        AgentConfig config = agentConfigProvider.getConfig(agentId);
+        if (config == null || config.getTools() == null || config.getTools().isEmpty()) {
+            return getAllToolCallbacks();
+        }
+        return getAllToolCallbacks().stream()
+                .filter(tc -> config.getTools().contains(tc.getName()))
+                .collect(Collectors.toList());
+    }
 
     public void registerMcpTool(ToolDefinition definition, ToolInvoker invoker) {
         // 提取服务器名称（格式 mcp:<serverName>:<toolName>）

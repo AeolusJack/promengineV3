@@ -24,5 +24,13 @@ public class AgentRecord {
     private boolean enabled;
     private long createdAt;
     private String createdBy;
+    // AgentRecord.java 增加字段
+    private String workflowTemplateId;
+    private String knowledgeConfig;  // JSON
+    private String toolOverrides;    // JSON
+    private boolean enableHumanReview;
+    private Integer maxRetries = 3;
+    private Integer timeoutSeconds = 300;
+    private String fallbackAgentId;
 
 }

@@ -7,30 +7,33 @@
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
+        <module name="promengine-adapter-browseruse" />
+        <module name="promengine-devtools" />
+        <module name="promengine-agent-finance" />
+        <module name="promengine-ethics" />
+        <module name="promengine-psych-aid" />
+        <module name="promengine-temporal" />
+        <module name="promengine-adapter-openclaw" />
+        <module name="promengine-executor" />
         <module name="promengine-runtime" />
         <module name="promengine-neuro" />
         <module name="promengine-web" />
-        <module name="promengine-adapter-browseruse" />
-        <module name="promengine-devtools" />
         <module name="promengine-cognition" />
         <module name="promengine-adapter-mcp" />
+        <module name="promengine-agent-common" />
         <module name="promengine-spring-boot-starter" />
         <module name="promengine-swarm" />
         <module name="promengine-adapter-feishu" />
-        <module name="promengine-ethics" />
-        <module name="promengine-psych-aid" />
         <module name="promengine-identity-proxy" />
-        <module name="promengine-temporal" />
         <module name="promengine-model" />
         <module name="promengine-adapter-litellm" />
         <module name="promengine-memory" />
         <module name="promengine-core" />
-        <module name="promengine-adapter-openclaw" />
         <module name="promengine-apex" />
-        <module name="promengine-executor" />
         <module name="promengine-skill" />
         <module name="promengine-verifier" />
         <module name="promengine-prompt" />
+        <module name="promengine-agent-code" />
       </profile>
     </annotationProcessing>
   </component>
@@ -41,6 +44,10 @@
       <module name="promengine-adapter-litellm" options="-parameters" />
       <module name="promengine-adapter-mcp" options="-parameters" />
       <module name="promengine-adapter-openclaw" options="-parameters" />
+      <module name="promengine-agent" options="" />
+      <module name="promengine-agent-code" options="-parameters" />
+      <module name="promengine-agent-common" options="-parameters" />
+      <module name="promengine-agent-finance" options="-parameters" />
       <module name="promengine-apex" options="-parameters" />
       <module name="promengine-cognition" options="-parameters" />
       <module name="promengine-core" options="-parameters" />
