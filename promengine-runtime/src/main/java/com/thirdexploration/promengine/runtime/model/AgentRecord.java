@@ -32,5 +32,7 @@ public class AgentRecord {
     private Integer maxRetries = 3;
     private Integer timeoutSeconds = 300;
     private String fallbackAgentId;
+    private String planningSkillName;
+    private String type;
 
 }
