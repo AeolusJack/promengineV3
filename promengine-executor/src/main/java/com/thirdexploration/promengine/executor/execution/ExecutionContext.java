@@ -8,7 +8,9 @@ import lombok.Data;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 执行上下文，封装单次任务执行所需的所有状态信息。
@@ -24,7 +26,7 @@ import java.util.UUID;
 public class ExecutionContext {
 
     /** 执行唯一标识 */
-    private final String executionId;
+    private final  String executionId;
 
     /** 会话标识，用于关联多轮对话 */
     private final String sessionId;
@@ -57,8 +59,23 @@ public class ExecutionContext {
     /** 执行过程中发生的错误信息 */
     private String errorMessage;
 
-//    private String taskContext;
 
+
+    @Builder.Default
+    private AtomicInteger stepCounter = new AtomicInteger(0);
+
+    /**
+     * 获取下一个步骤编号（从1开始，每次调用自增1）。
+     *
+     * @return 步骤编号
+     */
+    public int nextStepNumber() {
+        return stepCounter.incrementAndGet();
+    }
+//    private int stepCounter = 0;
+//    public synchronized int nextStepNumber() {
+//        return ++stepCounter;
+//    }
     /**
      * 便捷构造方法：基于 UserInput 创建默认上下文。
      *
@@ -66,18 +83,25 @@ public class ExecutionContext {
      * @return 初始化的 ExecutionContext
      */
     public static ExecutionContext of(UserInput input) {
+        // 安全提取 executionId：优先从 metadata 中获取，否则生成新的
+        String executionId = Optional.ofNullable(input.getMetadata())
+                .map(map -> map.get("executionId"))
+                .filter(String.class::isInstance)
+                .map(String.class::cast)
+                .orElseGet(ExecutionContext::generateExecutionId);
+
         ExecutionContext ctx = ExecutionContext.builder()
-                .executionId(generateExecutionId())
+                .executionId(executionId)
                 .sessionId(input.getSessionId())
                 .userId(input.getUserId())
                 .userInput(input)
                 .startTime(Instant.now())
                 .status(ExecutionStatus.CREATED)
                 .build();
-        // 合并 metadata 到 attributes
-        if (input.getMetadata() != null) {
-            ctx.getAttributes().putAll(input.getMetadata());
-        }
+
+        // 合并原始 metadata 到 attributes（若需排除 executionId 可在此处处理）
+        Optional.ofNullable(input.getMetadata())
+                .ifPresent(ctx.getAttributes()::putAll);
 
         return ctx;
     }
@@ -88,22 +112,22 @@ public class ExecutionContext {
      * @param taskContext 任务上下文
      * @return ExecutionContext
      */
-    public static ExecutionContext from(TaskContext taskContext) {
-        ExecutionContextBuilder builder = ExecutionContext.builder()
-                .executionId(generateExecutionId())
-                .sessionId(taskContext.getUserInput().getSessionId())
-                .userId(taskContext.getUserId())
-                .userInput(taskContext.getUserInput())
-                .taskType(taskContext.getTaskType())
-                .startTime(Instant.now());
-
-        // 复制 TaskContext 中的变量到 attributes
-        if (taskContext.getVariables() != null) {
-            builder.attributes(new HashMap<>(taskContext.getVariables()));
-        }
-
-        return builder.build();
-    }
+//    public static ExecutionContext from(TaskContext taskContext) {
+//        ExecutionContextBuilder builder = ExecutionContext.builder()
+//                .executionId(generateExecutionId())
+//                .sessionId(taskContext.getUserInput().getSessionId())
+//                .userId(taskContext.getUserId())
+//                .userInput(taskContext.getUserInput())
+//                .taskType(taskContext.getTaskType())
+//                .startTime(Instant.now());
+//
+//        // 复制 TaskContext 中的变量到 attributes
+//        if (taskContext.getVariables() != null) {
+//            builder.attributes(new HashMap<>(taskContext.getVariables()));
+//        }
+//
+//        return builder.build();
+//    }
 
     /**
      * 转换为核心域的 TaskContext，用于与记忆、提示词等模块交互。

@@ -21,5 +21,8 @@ public class TaskPlan {
         private String parallelGroup;  // 可选，用于并行执行
         private int maxRetries = 3;
         private String fallback;       // 失败后降级的步骤 ID
+        // TaskPlan.Step (core)
+        private boolean requiresReview;       // 是否需要人工确认
+        private String reviewOptions;        // 审核选项 JSON
     }
 }

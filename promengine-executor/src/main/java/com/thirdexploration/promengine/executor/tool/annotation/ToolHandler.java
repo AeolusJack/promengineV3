@@ -23,7 +23,7 @@ public @interface ToolHandler {
     boolean enabled() default true;
 
     enum Category {
-        FILE, COMMAND, NETWORK, BROWSER, DATABASE, UTILITY, CUSTOM
+        FILE, COMMAND, NETWORK, BROWSER, DATABASE, UTILITY, CUSTOM,INFORMATION,CODE,DATA,MEDIA
     }
 
     enum Location {

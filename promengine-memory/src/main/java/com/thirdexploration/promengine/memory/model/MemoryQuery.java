@@ -3,11 +3,12 @@ package com.thirdexploration.promengine.memory.model;
 import lombok.Builder;
 import lombok.Data;
 
+import java.time.Instant;
 import java.util.List;
 
 /**
- * aeon
  * 记忆查询条件，支持多域、多层、权限过滤。
+ * 优化：增加时间范围字段、默认值安全处理。
  */
 @Data
 @Builder
@@ -56,48 +57,67 @@ public class MemoryQuery {
     /**
      * 最大返回结果数
      */
+    @Builder.Default
     private int maxResults = 10;
 
     /**
      * 最小记忆强度阈值
      */
+    @Builder.Default
     private float minStrength = 0.0f;
 
     /**
      * 是否包含工作记忆
      */
+    @Builder.Default
     private boolean includeWorking = true;
 
     /**
      * 是否包含情景记忆
      */
+    @Builder.Default
     private boolean includeEpisodic = true;
 
     /**
      * 是否包含语义记忆
      */
+    @Builder.Default
     private boolean includeSemantic = true;
 
     /**
      * 是否包含过程记忆
      */
+    @Builder.Default
     private boolean includeProcedural = false;
 
     /**
      * 是否包含集体记忆
      */
+    @Builder.Default
     private boolean includeCollective = false;
 
     /**
-     * 获取有效的主域
+     * 起始时间（用于时间范围过滤）
+     */
+    private Instant fromTime;
+
+    /**
+     * 结束时间（用于时间范围过滤）
+     */
+    private Instant toTime;
+
+    /**
+     * 默认检索天数（当 fromTime 未设置时，自动向前推这么多天）
+     */
+    @Builder.Default
+    private int defaultDays = 30;
+
+    /**
+     * 获取有效的主域（永不 null）
      */
     public String getEffectiveDomain() {
-        if (domain != null) {
-            return domain;
-        }
-        if (domains != null && !domains.isEmpty()) {
-            return domains.get(0);
-        }
+        if (domain != null && !domain.isBlank()) return domain;
+        if (domains != null && !domains.isEmpty()) return domains.get(0);
         return "general";
     }
 
@@ -109,21 +129,34 @@ public class MemoryQuery {
     }
 
     /**
-     * 获取多域查询列表，确保永不返回 null。
+     * 获取多域查询列表，永不返回 null
      */
     public List<String> getDomains() {
         return domains != null ? domains : List.of();
     }
 
     /**
-     * 获取所有查询域，确保永不返回 null。
-     * 如果 domains 有值则返回 domains，否则回退到 domain 字段，再回退到 "general"。
+     * 获取所有查询域，永不返回 null
      */
     public List<String> getAllDomains() {
-        if (domains != null && !domains.isEmpty()) {
-            return domains;
-        }
-        return domain != null ? List.of(domain) : List.of("general");
+        if (domains != null && !domains.isEmpty()) return domains;
+        if (domain != null && !domain.isBlank()) return List.of(domain);
+        return List.of("general");
+    }
+
+    /**
+     * 获取起始时间（若未设置则自动根据 defaultDays 向前推算）
+     */
+    public Instant getFromTime() {
+        if (fromTime != null) return fromTime;
+        return Instant.now().minusSeconds(defaultDays * 86400L);
+    }
+
+    /**
+     * 获取结束时间（若未设置则为当前时间）
+     */
+    public Instant getToTime() {
+        return toTime != null ? toTime : Instant.now();
     }
 
     /**

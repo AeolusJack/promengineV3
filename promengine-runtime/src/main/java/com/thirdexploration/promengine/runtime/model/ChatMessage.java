@@ -16,4 +16,5 @@ public class ChatMessage {
     private String content;
     private long timestamp;
     private long createdAt;
+    private String executionId; // ★ 新增
 }

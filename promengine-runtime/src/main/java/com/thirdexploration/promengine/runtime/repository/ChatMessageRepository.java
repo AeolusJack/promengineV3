@@ -20,8 +20,8 @@ public class ChatMessageRepository {
 
     public void save(ChatMessage message) {
         String sql = """
-                INSERT INTO chat_messages (id, user_id, session_id, session_name,role, content, timestamp, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?,?)
+                INSERT INTO chat_messages (id, user_id, session_id, session_name,role, content,execution_id, timestamp, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?,?,?)
                 """;
         jdbcTemplate.update(sql,
                 message.getId(),
@@ -30,6 +30,7 @@ public class ChatMessageRepository {
                 message.getSessionName(),
                 message.getRole(),
                 message.getContent(),
+                message.getExecutionId(),
                 message.getTimestamp(),
                 message.getCreatedAt());
     }
@@ -87,6 +88,7 @@ public class ChatMessageRepository {
                     .content(rs.getString("content"))
                     .timestamp(rs.getLong("timestamp"))
                     .createdAt(rs.getLong("created_at"))
+                    .executionId(rs.getString("execution_id"))
                     .build();
         }
     }

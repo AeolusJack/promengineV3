@@ -12,68 +12,110 @@ import org.springframework.util.DigestUtils;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 @Slf4j
 @Component
 public class EmbeddingService {
 
     private final EmbeddingModel embeddingModel;
-    private final Cache<String, float[]> cache;
+    private final Cache<String, float[]> successCache;
+    private final Cache<String, Boolean> failureCache;
 
-    // 根据模型文档设置最大 token 数，保守估计 500 token ≈ 2000 字符
     private static final int MAX_CHARS_PER_CHUNK = 2000;
     private static final int CHUNK_OVERLAP = 200;
+    private static final int MAX_RETRIES = 2;
+    private static final long RETRY_DELAY_MS = 500;
+    private static final long EMBEDDING_TIMEOUT_SECONDS = 10;
 
     public EmbeddingService(EmbeddingModel embeddingModel) {
         this.embeddingModel = embeddingModel;
-        this.cache = Caffeine.newBuilder()
+        this.successCache = Caffeine.newBuilder()
                 .maximumSize(10_000)
                 .expireAfterWrite(24, TimeUnit.HOURS)
                 .recordStats()
                 .build();
+        this.failureCache = Caffeine.newBuilder()
+                .maximumSize(2000)
+                .expireAfterWrite(1, TimeUnit.MINUTES)
+                .build();
     }
 
-    /**
-     * 获取文本的向量表示，自动处理分块与缓存
-     */
     public float[] embed(String text) {
         if (text == null || text.isBlank()) {
             return new float[0];
         }
         String key = DigestUtils.md5DigestAsHex(text.getBytes(StandardCharsets.UTF_8));
-        float[] cached = cache.getIfPresent(key);
+
+        // 1. 成功缓存命中
+        float[] cached = successCache.getIfPresent(key);
         if (cached != null) {
             return cached;
         }
 
-        float[] vector;
-        if (text.length() <= MAX_CHARS_PER_CHUNK) {
-            vector = embedSingle(text);
-        } else {
-            vector = embedChunked(text);
+        // 2. 失败缓存命中，直接返回空，避免重复调用
+        if (failureCache.getIfPresent(key) != null) {
+            log.debug("Skipping embedding for text (cached failure): key={}", key);
+            return new float[0];
         }
-        cache.put(key, vector);
-        return vector;
-    }
 
-    /**
-     * 单次嵌入（短文本）
-     */
-    private float[] embedSingle(String text) {
-        try {
-            EmbeddingResponse response = embeddingModel.call(
-                    new EmbeddingRequest(List.of(text), null));
-            return response.getResult().getOutput(); // Spring AI M7 返回 float[]
-        } catch (Exception e) {
-            log.error("Embedding failed for short text", e);
+        // 3. 执行嵌入（带重试和超时）
+        float[] vector = tryEmbedWithRetry(text);
+        if (vector != null && vector.length > 0) {
+            successCache.put(key, vector);
+            return vector;
+        } else {
+            failureCache.put(key, Boolean.TRUE);
+            log.warn("Embedding failed for text key={}, caching failure for 1 minute", key);
             return new float[0];
         }
     }
 
-    /**
-     * 分块嵌入并聚合（取平均）
-     */
+    private float[] tryEmbedWithRetry(String text) {
+        Exception lastException = null;
+        for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                // 增加超时控制
+                ExecutorService executor = Executors.newSingleThreadExecutor();
+                Future<float[]> future = executor.submit(() -> {
+                    if (text.length() <= MAX_CHARS_PER_CHUNK) {
+                        return embedSingle(text);
+                    } else {
+                        return embedChunked(text);
+                    }
+                });
+                float[] result = future.get(EMBEDDING_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                executor.shutdownNow();
+                if (result != null && result.length > 0) {
+                    return result;
+                }
+                lastException = new RuntimeException("Empty embedding result");
+            } catch (TimeoutException e) {
+                lastException = e;
+                log.warn("Embedding attempt {} timed out after {}s", attempt, EMBEDDING_TIMEOUT_SECONDS);
+            } catch (Exception e) {
+                lastException = e;
+                log.warn("Embedding attempt {} failed: {}", attempt, e.getMessage());
+            }
+            if (attempt < MAX_RETRIES) {
+                try {
+                    Thread.sleep(RETRY_DELAY_MS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+        log.error("Embedding failed after {} attempts: {}", MAX_RETRIES, lastException != null ? lastException.getMessage() : "unknown");
+        return null;
+    }
+
+    private float[] embedSingle(String text) {
+        EmbeddingResponse response = embeddingModel.call(
+                new EmbeddingRequest(List.of(text), null));
+        return response.getResult().getOutput();
+    }
+
     private float[] embedChunked(String text) {
         List<float[]> chunkVectors = new ArrayList<>();
         int start = 0;
@@ -87,7 +129,6 @@ public class EmbeddingService {
             start = end - CHUNK_OVERLAP;
             if (start >= text.length()) break;
         }
-
         if (chunkVectors.isEmpty()) {
             return new float[0];
         }
@@ -101,11 +142,10 @@ public class EmbeddingService {
         for (int i = 0; i < dim; i++) {
             aggregated[i] /= chunkVectors.size();
         }
-        log.debug("Aggregated embedding from {} chunks", chunkVectors.size());
         return aggregated;
     }
 
     public double getCacheHitRate() {
-        return cache.stats().hitRate();
+        return successCache.stats().hitRate();
     }
 }

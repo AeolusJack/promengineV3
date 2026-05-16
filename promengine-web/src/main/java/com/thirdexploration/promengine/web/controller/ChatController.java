@@ -37,7 +37,7 @@ public class ChatController {
                                             @RequestHeader(value = "X-User-Id", required = false) String userId) {
         String uid = userId != null ? userId : "default-user";
         String sessionId = request.sessionId();
-
+        String executionId = UUID.randomUUID().toString();
         // 保存用户消息（与之前一致）
         if (chatMessageRepository.isFirstMessage(uid, sessionId)) {
             String autoName = request.message();
@@ -46,6 +46,7 @@ public class ChatController {
                     .id(UUID.randomUUID().toString())
                     .userId(uid)
                     .sessionId(sessionId)
+                    .executionId(executionId)
                     .sessionName(autoName)
                     .role("user")
                     .content(request.message())
@@ -58,6 +59,7 @@ public class ChatController {
                     .id(UUID.randomUUID().toString())
                     .userId(uid)
                     .sessionId(sessionId)
+                    .executionId(executionId)
                     .role("user")
                     .content(request.message())
                     .timestamp(System.currentTimeMillis())
@@ -72,6 +74,7 @@ public class ChatController {
                 .text(request.message())
                 .timestamp(System.currentTimeMillis())
                 .userId(uid)
+                .metadata(Map.of( "executionId", executionId))
                 .domain(null);
 
         // 处理 Agent 上下文
@@ -101,6 +104,7 @@ public class ChatController {
                     .id(UUID.randomUUID().toString())
                     .userId(uid)
                     .sessionId(sessionId)
+                    .executionId(executionId)
                     .role("assistant")
                     .content(response.getText())
                     .timestamp(System.currentTimeMillis())
@@ -116,12 +120,13 @@ public class ChatController {
                                  @RequestHeader(value = "X-User-Id", required = false) String userId) {
         String uid = userId != null ? userId : "default-user";
         SseEmitter emitter = new SseEmitter(120_000L);
-
+        String executionId = UUID.randomUUID().toString();
         // 保存用户消息
         ChatMessage userMsg = ChatMessage.builder()
                 .id(UUID.randomUUID().toString())
                 .userId(uid)
                 .sessionId(request.sessionId())
+                .executionId(executionId)
                 .role("user")
                 .content(request.message())
                 .timestamp(System.currentTimeMillis())
@@ -134,6 +139,7 @@ public class ChatController {
                 .sessionId(request.sessionId())
                 .text(request.message())
                 .userId(uid)
+                .metadata(Map.of("executionId", executionId))
                 .timestamp(System.currentTimeMillis());
         if (request.agentId() != null && !request.agentId().isBlank()) {
             try {
@@ -166,6 +172,7 @@ public class ChatController {
                                     .id(UUID.randomUUID().toString())
                                     .userId(uid)
                                     .sessionId(request.sessionId())
+                                    .executionId(executionId)
                                     .role("assistant")
                                     .content(fullContent.toString())
                                     .timestamp(System.currentTimeMillis())

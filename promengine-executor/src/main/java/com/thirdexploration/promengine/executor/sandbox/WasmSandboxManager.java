@@ -225,6 +225,8 @@ public class WasmSandboxManager implements SandboxManager {
             }
         }
 
-        throw new SecurityException("Path not allowed by sandbox policy: " + relativePath);
+        throw new SecurityException("Path not allowed by sandbox policy: " + relativePath
+                + ". Allowed roots: " + policy.getAllowedPaths()
+                + ". Please use a path starting with one of these directories, e.g., 'documents/" + relativePath + "'.");
     }
 }

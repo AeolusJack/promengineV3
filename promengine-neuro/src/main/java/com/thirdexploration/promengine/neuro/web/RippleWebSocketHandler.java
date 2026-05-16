@@ -96,4 +96,14 @@ public class RippleWebSocketHandler extends TextWebSocketHandler {
             log.error("Failed to send ripple event to session {}", sessionId, e);
         }
     }
+
+    public void sendToSession(String sessionId, String json) {
+        WebSocketSession session = sessions.get(sessionId);
+        if (session == null || !session.isOpen()) return;
+        try {
+            session.sendMessage(new TextMessage(json));
+        } catch (IOException e) {
+            log.error("Failed to send ripple event to session {}", sessionId, e);
+        }
+    }
 }

@@ -2,12 +2,10 @@ package com.thirdexploration.promengine.memory.retrieval;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.*;
 import org.apache.lucene.index.*;
-import org.apache.lucene.queryparser.classic.ParseException;
 import org.apache.lucene.queryparser.classic.QueryParser;
 import org.apache.lucene.search.*;
 import org.apache.lucene.store.FSDirectory;
@@ -18,23 +16,27 @@ import java.io.IOException;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * aeon
+ * Lucene 索引服务，支持近实时搜索与批量提交。
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class LuceneIndexService {
 
     @Value("${promengine.data-dir:./data}")
     private String dataDir;
 
-    private IndexWriter episodicWriter;
-    private IndexWriter semanticWriter;
     private StandardAnalyzer analyzer;
     private FSDirectory episodicDir;
     private FSDirectory semanticDir;
+    private IndexWriter episodicWriter;
+    private IndexWriter semanticWriter;
+    private final AtomicInteger episodicDocCount = new AtomicInteger(0);
+    private final AtomicInteger semanticDocCount = new AtomicInteger(0);
+    private static final int COMMIT_BATCH_SIZE = 100;
+    private static final long COMMIT_INTERVAL_MS = 5000;
 
     @PostConstruct
     public void init() throws IOException {
@@ -42,72 +44,73 @@ public class LuceneIndexService {
         episodicDir = FSDirectory.open(Paths.get(dataDir, "memory", "lucene", "episodic"));
         semanticDir = FSDirectory.open(Paths.get(dataDir, "memory", "lucene", "semantic"));
 
-        // 为每个 IndexWriter 创建独立的 IndexWriterConfig
         IndexWriterConfig episodicConfig = new IndexWriterConfig(analyzer);
         episodicConfig.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
+        episodicConfig.setRAMBufferSizeMB(16.0);
         episodicWriter = new IndexWriter(episodicDir, episodicConfig);
 
         IndexWriterConfig semanticConfig = new IndexWriterConfig(analyzer);
         semanticConfig.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
+        semanticConfig.setRAMBufferSizeMB(16.0);
         semanticWriter = new IndexWriter(semanticDir, semanticConfig);
 
-        log.info("Lucene indexes initialized");
+        log.info("Lucene indexes initialized with NRT support");
     }
-
-
 
     @PreDestroy
     public void cleanup() throws IOException {
-        if (episodicWriter != null) episodicWriter.close();
-        if (semanticWriter != null) semanticWriter.close();
+        if (episodicWriter != null) {
+            episodicWriter.commit();
+            episodicWriter.close();
+        }
+        if (semanticWriter != null) {
+            semanticWriter.commit();
+            semanticWriter.close();
+        }
         if (episodicDir != null) episodicDir.close();
         if (semanticDir != null) semanticDir.close();
     }
 
     public void indexEpisodic(String id, String content, String summary) {
-        Document doc = new Document();
-        doc.add(new StringField("id", id, Field.Store.YES));
-        doc.add(new TextField("content", content, Field.Store.NO));
-        doc.add(new TextField("summary", summary != null ? summary : "", Field.Store.NO));
-        try {
-            episodicWriter.updateDocument(new Term("id", id), doc);
-            episodicWriter.commit();
-        } catch (IOException e) {
-            log.error("Failed to index episodic memory: {}", id, e);
-        }
+        index(episodicWriter, id, content, summary, episodicDocCount);
     }
 
     public void indexSemantic(String id, String content, String summary) {
+        index(semanticWriter, id, content, summary, semanticDocCount);
+    }
+
+    private void index(IndexWriter writer, String id, String content, String summary, AtomicInteger counter) {
         Document doc = new Document();
         doc.add(new StringField("id", id, Field.Store.YES));
-        doc.add(new TextField("content", content, Field.Store.NO));
-        doc.add(new TextField("summary", summary != null ? summary : "", Field.Store.NO));
+        doc.add(new TextField("content", content == null ? "" : content, Field.Store.NO));
+        doc.add(new TextField("summary", summary == null ? "" : summary, Field.Store.NO));
         try {
-            semanticWriter.updateDocument(new Term("id", id), doc);
-            semanticWriter.commit();
+            writer.updateDocument(new Term("id", id), doc);
+            int count = counter.incrementAndGet();
+            if (count % COMMIT_BATCH_SIZE == 0) {
+                writer.commit();
+                log.debug("Committed Lucene index after {} documents", count);
+            }
         } catch (IOException e) {
-            log.error("Failed to index semantic memory: {}", id, e);
+            log.error("Failed to index document id: {}", id, e);
         }
     }
 
     public List<String> searchEpisodic(String queryText, int limit) {
-        return search(episodicDir, queryText, limit);
+        return search(episodicWriter, episodicDir, queryText, limit);
     }
 
     public List<String> searchSemantic(String queryText, int limit) {
-        return search(semanticDir, queryText, limit);
+        return search(semanticWriter, semanticDir, queryText, limit);
     }
 
-    private List<String> search(FSDirectory dir, String queryText, int limit) {
+    private List<String> search(IndexWriter writer, FSDirectory dir, String queryText, int limit) {
+        if (queryText == null || queryText.isBlank()) return List.of();
         List<String> ids = new ArrayList<>();
         try {
-            if (!DirectoryReader.indexExists(dir)) {
-                log.debug("Lucene index does not exist at {}, returning empty results", dir);
-                return ids;
-            }
-            try (IndexReader reader = DirectoryReader.open(dir)) {
+            // 使用近实时 reader
+            try (IndexReader reader = (writer == null) ? DirectoryReader.open(dir) : DirectoryReader.open(writer)) {
                 IndexSearcher searcher = new IndexSearcher(reader);
-                // 关键修复：对查询文本进行转义，避免特殊字符导致解析错误
                 String escapedQuery = QueryParser.escape(queryText);
                 QueryParser parser = new QueryParser("content", analyzer);
                 Query query = parser.parse(escapedQuery);
@@ -118,30 +121,39 @@ public class LuceneIndexService {
                 }
             }
         } catch (IndexNotFoundException e) {
-            log.debug("Lucene index not found at {}", dir);
-        } catch (ParseException e) {
-            log.warn("Lucene query parse failed for '{}': {}", queryText, e.getMessage());
+            log.debug("Index not found");
+        } catch (org.apache.lucene.queryparser.classic.ParseException e) {
+            log.warn("Query parse failed: {}", e.getMessage());
         } catch (Exception e) {
-            log.warn("Lucene search failed: {}", e.getMessage());
+            log.warn("Search failed", e);
         }
         return ids;
     }
 
     public void deleteEpisodic(String id) {
-        try {
-            episodicWriter.deleteDocuments(new Term("id", id));
-            episodicWriter.commit();
-        } catch (IOException e) {
-            log.error("Failed to delete episodic index: {}", id, e);
-        }
+        delete(episodicWriter, id);
     }
 
     public void deleteSemantic(String id) {
+        delete(semanticWriter, id);
+    }
+
+    private void delete(IndexWriter writer, String id) {
         try {
-            semanticWriter.deleteDocuments(new Term("id", id));
-            semanticWriter.commit();
+            writer.deleteDocuments(new Term("id", id));
         } catch (IOException e) {
-            log.error("Failed to delete semantic index: {}", id, e);
+            log.error("Failed to delete index for id: {}", id, e);
+        }
+    }
+
+    // 定期调用，也可由外部定时任务触发
+    public void forceCommit() {
+        try {
+            episodicWriter.commit();
+            semanticWriter.commit();
+            log.debug("Forced commit on Lucene indexes");
+        } catch (IOException e) {
+            log.error("Failed to commit Lucene indexes", e);
         }
     }
 }

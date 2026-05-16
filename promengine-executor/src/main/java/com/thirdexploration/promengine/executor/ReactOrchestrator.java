@@ -1,6 +1,7 @@
 package com.thirdexploration.promengine.executor;
 
-
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.thirdexploration.promengine.core.AgentConfig;
 import com.thirdexploration.promengine.core.agent.AgentConfigProvider;
 import com.thirdexploration.promengine.core.agent.TaskPlan;
@@ -11,11 +12,12 @@ import com.thirdexploration.promengine.executor.execution.ExecutionContext;
 import com.thirdexploration.promengine.executor.tool.registry.ToolRegistry;
 import com.thirdexploration.promengine.memory.api.UnifiedMemoryAPI;
 import com.thirdexploration.promengine.memory.model.MemoryEntry;
+import com.thirdexploration.promengine.memory.agent.model.ReActStepRecord;
+import com.thirdexploration.promengine.memory.agent.repository.ReActStepRepository;
 import com.thirdexploration.promengine.neuro.ThinkingRippleGenerator;
 import com.thirdexploration.promengine.neuro.web.RippleWebSocketHandler;
 import com.thirdexploration.promengine.prompt.core.PromptContext;
 import com.thirdexploration.promengine.prompt.core.PromptPipeline;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.*;
@@ -29,17 +31,16 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import reactor.core.publisher.Flux;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
-@RequiredArgsConstructor
 @Slf4j
 @Component
 @ConditionalOnProperty(name = "promengine.orchestrator.mode", havingValue = "REACT")
@@ -53,8 +54,9 @@ public class ReactOrchestrator implements Orchestrator {
     private final RippleWebSocketHandler rippleHandler;
     private final AgentConfigProvider agentConfigProvider;
     private final ToolRegistry toolRegistry;
+    private final ObjectMapper objectMapper;
+    private final ReActStepRepository stepRepository;
 
-    // 任务规划策略（可选，未配置时不影响原有功能）
     @Autowired(required = false)
     private TaskPlanningStrategy planningStrategy;
 
@@ -67,7 +69,32 @@ public class ReactOrchestrator implements Orchestrator {
     @Value("${promengine.orchestrator.llm-retry-delay-ms:1000}")
     private long llmRetryDelayMs;
 
+    @Value("${promengine.orchestrator.stream-timeout-seconds:120}")
+    private long streamTimeoutSeconds;
+
     private final Map<String, WindowedRipple> rippleWindows = new ConcurrentHashMap<>();
+
+    public ReactOrchestrator(ChatClient.Builder chatClientBuilder,
+                             ToolExecutor toolExecutor,
+                             UnifiedMemoryAPI memoryAPI,
+                             OrchestratorProperties properties,
+                             PromptPipeline promptPipeline,
+                             RippleWebSocketHandler rippleHandler,
+                             AgentConfigProvider agentConfigProvider,
+                             ToolRegistry toolRegistry,
+                             ObjectMapper objectMapper,
+                             ReActStepRepository stepRepository) {
+        this.chatClientBuilder = chatClientBuilder;
+        this.toolExecutor = toolExecutor;
+        this.memoryAPI = memoryAPI;
+        this.properties = properties;
+        this.promptPipeline = promptPipeline;
+        this.rippleHandler = rippleHandler;
+        this.agentConfigProvider = agentConfigProvider;
+        this.toolRegistry = toolRegistry;
+        this.objectMapper = objectMapper;
+        this.stepRepository = stepRepository;
+    }
 
     private static class WindowedRipple {
         long lastSent = 0;
@@ -92,79 +119,85 @@ public class ReactOrchestrator implements Orchestrator {
 
     @Override
     public CompletableFuture<Response> execute(ExecutionContext ctx) {
-        // 1. 加载 Agent 配置（若有）
         String agentId = ctx.getAttribute("agentId", String.class);
         AgentConfig agentConfig = agentId != null ? agentConfigProvider.getConfig(agentId) : null;
+        String sessionId = ctx.getUserInput().getSessionId();
 
-        log.info("ReactOrchestrator (M7) started for session: {}", ctx.getUserInput().getSessionId());
+        log.info("ReactOrchestrator (M7) started for session: {}", sessionId);
         long startTime = System.currentTimeMillis();
 
-        // 2. 构建系统提示词
         String systemPrompt = buildSystemPrompt(ctx, agentConfig);
-
-        // 3. 尝试生成任务计划（如果需要）
         String planText = generatePlanIfNeeded(ctx, agentConfig);
         if (!planText.isEmpty()) {
             systemPrompt += "\n\n" + planText;
         }
 
-        // 4. 构建初始对话
         List<Message> conversation = new ArrayList<>();
         conversation.add(new SystemMessage(systemPrompt));
         conversation.add(new UserMessage(ctx.getUserInput().getText()));
 
         ChatClient chatClient = chatClientBuilder.build();
 
-        int step = 0;
         String finalAnswer = null;
         String modelUsed = null;
-
-        while (step < properties.getMaxSteps()) {
-            step++;
-            log.info("========== ReAct 第 {} 轮开始 ==========", step);
-            logReActStep(step, conversation);
-
-            // 获取当前 Agent 允许的工具集
-            ToolCallback[] tools = resolveToolCallbacks(agentConfig);
-
-            ChatResponse response = callLLMWithRetry(chatClient, conversation, tools, step);
-            if (response == null) {
-                finalAnswer = "抱歉，模型调用出现异常，请稍后重试。";
-                break;
-            }
-
-            if (modelUsed == null && response.getMetadata() != null) {
-                modelUsed = response.getMetadata().getModel();
-            }
-
-            Message assistantMessage = response.getResult().getOutput();
-            conversation.add(assistantMessage);
-            logLLMResponse(assistantMessage);
-
-            if (hasToolCalls(assistantMessage) && properties.isToolUseEnabled()) {
-                log.info("========== 第 {} 轮：检测到工具调用，执行工具 ==========", step);
-                List<ToolResponseMessage.ToolResponse> toolResponses = executeToolCalls(assistantMessage);
-                conversation.add(new ToolResponseMessage(toolResponses));
-                logToolResponses(toolResponses);
-            } else {
-                log.info("========== 第 {} 轮：无工具调用，生成最终回复 ==========", step);
-                finalAnswer = cleanModelOutput(assistantMessage.getText());
-                break;
-            }
-        }
-
-        if (finalAnswer == null) {
-            finalAnswer = "任务执行超过最大步数限制，已终止。";
-        }
-
-        logCompletion(step, finalAnswer, modelUsed);
-
-        // 存储对话记忆，使用 Agent 指定的记忆域
         String memoryDomain = agentConfig != null ? agentConfig.getMemoryDomain() : "general";
-        storeConversationMemoryAsync(ctx, finalAnswer, memoryDomain);
+
+        try {
+            while (ctx.getStepCounter().get() < properties.getMaxSteps()) {
+                int currentStep = ctx.nextStepNumber();
+                log.info("========== ReAct 第 {} 轮开始 ==========", currentStep);
+                logReActStep(currentStep, conversation);
+
+                pushAndSaveStep(sessionId, agentId, ReActStepEvent.builder()
+                        .type("THINKING")
+                        .executionId(ctx.getExecutionId())
+                        .stepNumber(currentStep)
+                        .description("模型推理中...")
+                        .status("RUNNING")
+                        .timestamp(System.currentTimeMillis())
+                        .build());
+
+                ToolCallback[] tools = resolveToolCallbacks(agentConfig);
+                ChatResponse response = callLLMWithRetry(chatClient, conversation, tools, currentStep);
+                if (response == null) {
+                    finalAnswer = "抱歉，模型调用出现异常，请稍后重试。";
+                    break;
+                }
+
+                if (modelUsed == null && response.getMetadata() != null) {
+                    modelUsed = response.getMetadata().getModel();
+                }
+
+                Message assistantMessage = response.getResult().getOutput();
+                conversation.add(assistantMessage);
+                logLLMResponse(assistantMessage);
+
+                if (hasToolCalls(assistantMessage) && properties.isToolUseEnabled()) {
+                    log.info("========== 第 {} 轮：检测到工具调用，执行工具 ==========", currentStep);
+                    List<ToolResponseMessage.ToolResponse> toolResponses =
+                            executeToolCalls(assistantMessage, currentStep, ctx, agentId);
+                    conversation.add(new ToolResponseMessage(toolResponses));
+                    logToolResponses(toolResponses);
+                } else {
+                    log.info("========== 第 {} 轮：无工具调用，生成最终回复 ==========", currentStep);
+                    finalAnswer = cleanModelOutput(assistantMessage.getText());
+                    break;
+                }
+            }
+
+            if (finalAnswer == null) {
+                finalAnswer = "任务执行超过最大步数限制，已终止。";
+            }
+        } finally {
+            if (finalAnswer != null) {
+                storeConversationMemoryAsync(ctx, finalAnswer, memoryDomain);
+            }
+        }
+
+        logCompletion(ctx.getStepCounter().get(), finalAnswer, modelUsed);
 
         long tookMs = System.currentTimeMillis() - startTime;
-        log.info("ReactOrchestrator finished in {} steps, {} ms", step, tookMs);
+        log.info("ReactOrchestrator finished in {} steps, {} ms", ctx.getStepCounter(), tookMs);
 
         return CompletableFuture.completedFuture(
                 Response.builder()
@@ -176,19 +209,18 @@ public class ReactOrchestrator implements Orchestrator {
         );
     }
 
-    // ==================== 流式执行 ====================
     @Override
     public Stream<CompletionChunk> executeStream(ExecutionContext ctx) {
-        // 流式逻辑类似，此处保持原有结构，但同样需要注入 Agent 配置和计划
-        // 为简洁，此处省略 Agent 配置的完整集成，您可参照非流式版本补充
-        log.info("ReactOrchestrator stream started for session: {}", ctx.getUserInput().getSessionId());
-        TaskContext taskCtx = ctx.toTaskContext();
-        taskCtx.setTaskType("react_conversation");
-        PromptContext promptCtx = promptPipeline.collect(taskCtx);
-        promptCtx.setAvailableTools(toolExecutor.getAvailableToolNames());
-        promptCtx.setToolDescriptions(toolExecutor.getToolDescriptions());
-        String systemPrompt = promptPipeline.render(promptCtx);
-        systemPrompt = promptPipeline.compress(systemPrompt);
+        String agentId = ctx.getAttribute("agentId", String.class);
+        AgentConfig agentConfig = agentId != null ? agentConfigProvider.getConfig(agentId) : null;
+        String sessionId = ctx.getUserInput().getSessionId();
+        log.info("ReactOrchestrator stream started for session: {}", sessionId);
+
+        String systemPrompt = buildSystemPrompt(ctx, agentConfig);
+        String planText = generatePlanIfNeeded(ctx, agentConfig);
+        if (!planText.isEmpty()) {
+            systemPrompt += "\n\n" + planText;
+        }
 
         List<Message> conversation = new ArrayList<>();
         conversation.add(new SystemMessage(systemPrompt));
@@ -199,7 +231,7 @@ public class ReactOrchestrator implements Orchestrator {
         final boolean[] finished = {false};
         Executors.newSingleThreadExecutor().submit(() -> {
             try {
-                streamReActLoop(chatClient, conversation, ctx, queue, finished);
+                streamReActLoop(chatClient, conversation, ctx, queue, finished, agentConfig);
             } catch (Exception e) {
                 log.error("Stream loop failed", e);
                 queue.offer(CompletionChunk.builder().delta("流式处理异常: " + e.getMessage()).last(true).build());
@@ -226,117 +258,58 @@ public class ReactOrchestrator implements Orchestrator {
                 }, false);
     }
 
-    // ==================== 私有辅助方法 ====================
-
-    /** 构建系统提示词：优先使用 Agent 专属提示词，否则走管线 */
-    private String buildSystemPrompt(ExecutionContext ctx, AgentConfig agentConfig) {
-        if (agentConfig != null && agentConfig.getSystemPrompt() != null && !agentConfig.getSystemPrompt().isBlank()) {
-            return agentConfig.getSystemPrompt();
-        }
-        TaskContext taskCtx = ctx.toTaskContext();
-        taskCtx.setTaskType("react_conversation");
-        PromptContext context = promptPipeline.collect(taskCtx);
-        context.setAvailableTools(toolExecutor.getAvailableToolNames());
-        context.setToolDescriptions(toolExecutor.getToolDescriptions());
-        String prompt = promptPipeline.render(context);
-        return promptPipeline.compress(prompt);
-    }
-
-    /** 判断是否需要生成任务计划，并返回计划文本（为空则不注入） */
-    private String generatePlanIfNeeded(ExecutionContext ctx, AgentConfig agentConfig) {
-        if (planningStrategy == null) return "";
-        String taskType = ctx.toTaskContext().getTaskType();
-        if ("code_generation".equals(taskType) || "project_refactor".equals(taskType)) {
-            try {
-                Map<String, Object> planCtx = Map.of(
-                    "projectPath", ctx.getAttribute("projectPath", String.class),
-                    "userInput", ctx.getUserInput().getText()
-                );
-                List<TaskPlan.Step> steps = planningStrategy.generatePlan(ctx.getUserInput().getText(), planCtx);
-                return formatPlan(steps);
-            } catch (Exception e) {
-                log.warn("任务规划生成失败，继续使用通用模式: {}", e.getMessage());
-                return "";
-            }
-        }
-        return "";
-    }
-
-    /** 将步骤列表格式化为 LLM 可读的文本 */
-    private String formatPlan(List<TaskPlan.Step> steps) {
-        if (steps == null || steps.isEmpty()) return "";
-        StringBuilder sb = new StringBuilder("【执行计划】\n");
-        for (int i = 0; i < steps.size(); i++) {
-            TaskPlan.Step step = steps.get(i);
-            sb.append(String.format("%d. %s (使用工具: %s)\n", i + 1, step.getDescription(), step.getTool()));
-        }
-        sb.append("请按照上述计划依次调用工具完成任务。\n");
-        return sb.toString();
-    }
-
-    /** 根据 Agent 配置解析工具回调 */
-    private ToolCallback[] resolveToolCallbacks(AgentConfig agentConfig) {
-        if (!properties.isToolUseEnabled()) return new ToolCallback[0];
-
-        List<ToolCallback> allTools = toolExecutor.getAvailableTools();
-        if (agentConfig == null || agentConfig.getTools() == null || agentConfig.getTools().isEmpty()) {
-            // 无 Agent 配置或未限制工具，返回全局工具
-            return deduplicate(allTools);
-        }
-
-        Set<String> allowed = new HashSet<>(agentConfig.getTools());
-        List<ToolCallback> filtered = allTools.stream()
-                .filter(tc -> allowed.contains(tc.getName()))
-                .collect(Collectors.toList());
-        return deduplicate(filtered);
-    }
-
-    private ToolCallback[] deduplicate(List<ToolCallback> tools) {
-        Map<String, ToolCallback> unique = new LinkedHashMap<>();
-        tools.forEach(tc -> unique.putIfAbsent(tc.getName(), tc));
-        return unique.values().toArray(new ToolCallback[0]);
-    }
-
-    // ----- 原有工具回调方法保留，但不再直接使用 -----
-    private ToolCallback[] getToolCallbacks() {
-        if (!properties.isToolUseEnabled()) return new ToolCallback[0];
-        List<ToolCallback> all = toolExecutor.getAvailableTools();
-        Map<String, ToolCallback> uniqueMap = new LinkedHashMap<>();
-        for (ToolCallback cb : all) {
-            uniqueMap.putIfAbsent(cb.getName(), cb);
-        }
-        return uniqueMap.values().toArray(new ToolCallback[0]);
-    }
-
-    // ==================== 原有流式内部逻辑 ====================
     private void streamReActLoop(ChatClient chatClient, List<Message> conversation, ExecutionContext ctx,
-                                 BlockingQueue<CompletionChunk> queue, boolean[] finished) {
-        AtomicInteger step = new AtomicInteger(0);
+                                 BlockingQueue<CompletionChunk> queue, boolean[] finished, AgentConfig agentConfig) {
         String[] modelUsed = {null};
         AtomicReference<String> finalAnswer = new AtomicReference<>();
-        startNextRound(chatClient, conversation, queue, step, modelUsed, finalAnswer, finished, ctx);
+        String memoryDomain = agentConfig != null ? agentConfig.getMemoryDomain() : "general";
+        try {
+            startNextRound(chatClient, conversation, queue, ctx, modelUsed, finalAnswer, finished, agentConfig);
+        } finally {
+            if (finalAnswer.get() != null) {
+                storeConversationMemoryAsync(ctx, finalAnswer.get(), memoryDomain);
+            }
+        }
     }
 
     private void startNextRound(ChatClient chatClient, List<Message> conversation,
-                                BlockingQueue<CompletionChunk> queue, AtomicInteger step,
+                                BlockingQueue<CompletionChunk> queue, ExecutionContext ctx,
                                 String[] modelUsed, AtomicReference<String> finalAnswer,
-                                boolean[] finished, ExecutionContext ctx) {
-        if (step.incrementAndGet() > properties.getMaxSteps()) {
-            finishStream(queue, finalAnswer.get() != null ? finalAnswer.get() : "超过最大步数", finished, finalAnswer, ctx);
+                                boolean[] finished, AgentConfig agentConfig) {
+        int currentStep = ctx.nextStepNumber();
+//        log.info("======= startNextRound: stepCounter = {} , currentStep = {}", ctx.getStepCounter(), currentStep);
+        if (currentStep > properties.getMaxSteps()) {
+            finishStream(queue, finalAnswer.get() != null ? finalAnswer.get() : "超过最大步数",
+                    finished, finalAnswer, ctx, agentConfig);
             return;
         }
 
-        ToolCallback[] tools = getToolCallbacks();
+        String sessionId = ctx.getUserInput().getSessionId();
+        String agentId = ctx.getAttribute("agentId", String.class);
+
+        pushAndSaveStep(sessionId, agentId, ReActStepEvent.builder()
+                .type("THINKING")
+                .stepNumber(currentStep)
+                .executionId(ctx.getExecutionId())
+                .description("模型推理中...")
+                .status("RUNNING")
+                .timestamp(System.currentTimeMillis())
+                .build());
+
+        ToolCallback[] tools = (agentConfig != null) ? resolveToolCallbacks(agentConfig) : getToolCallbacks();
+
         Flux<ChatResponse> flux = chatClient.prompt()
                 .messages(conversation)
                 .tools(tools)
                 .options(ToolCallingChatOptions.builder().internalToolExecutionEnabled(false).build())
                 .stream()
-                .chatResponse();
+                .chatResponse()
+                .timeout(Duration.ofSeconds(streamTimeoutSeconds));
 
         List<String> roundTexts = new ArrayList<>();
-        AtomicBoolean hasToolCall = new AtomicBoolean(false);
+        AtomicReference<Boolean> hasToolCall = new AtomicReference<>(false);
         AtomicReference<AssistantMessage> lastAssistantMsg = new AtomicReference<>();
+        final int step = currentStep;
 
         flux.doOnNext(response -> {
             if (modelUsed[0] == null && response.getMetadata() != null) {
@@ -357,7 +330,6 @@ public class ReactOrchestrator implements Orchestrator {
                 if (!clean.isEmpty()) {
                     roundTexts.add(clean);
                     queue.offer(CompletionChunk.builder().delta(clean).last(false).build());
-                    String sessionId = ctx.getUserInput().getSessionId();
                     double entropy = Math.min(0.1 + Math.random() * 0.4, 0.5);
                     String color = entropy < 0.3 ? "green" : (entropy < 0.6 ? "orange" : "red");
                     sendRippleSampled(sessionId, entropy, color);
@@ -370,47 +342,230 @@ public class ReactOrchestrator implements Orchestrator {
             AssistantMessage lastMsg = lastAssistantMsg.get();
 
             if (lastMsg != null && hasToolCall.get() && properties.isToolUseEnabled()) {
-                List<ToolResponseMessage.ToolResponse> toolResponses = executeToolCalls(lastMsg);
+                for (AssistantMessage.ToolCall tc : extractToolCalls(lastMsg)) {
+                    pushAndSaveStep(sessionId, agentId, ReActStepEvent.builder()
+                            .type("TOOL_CALL")
+                            .stepNumber(step)
+                            .executionId(ctx.getExecutionId())
+                            .description("调用工具: " + tc.name())
+                            .detail(tc.arguments())
+                            .status("RUNNING")
+                            .timestamp(System.currentTimeMillis())
+                            .build());
+                }
+                List<ToolResponseMessage.ToolResponse> toolResponses =
+                        executeToolCalls(lastMsg, step, ctx, agentId);
                 for (var tr : toolResponses) {
-                    queue.offer(CompletionChunk.builder().delta("[工具] " + tr.name() + " → " + tr.responseData()).last(false).build());
+                    pushAndSaveStep(sessionId, agentId, ReActStepEvent.builder()
+                            .type("TOOL_RESULT")
+                            .stepNumber(step)
+                            .executionId(ctx.getExecutionId())
+                            .description("工具返回: " + tr.name())
+                            .detail(tr.responseData())
+                            .status("SUCCESS")
+                            .timestamp(System.currentTimeMillis())
+                            .build());
+                    queue.offer(CompletionChunk.builder()
+                            .delta("[工具] " + tr.name() + " → " + tr.responseData()).last(false).build());
                 }
                 conversation.add(new ToolResponseMessage(toolResponses));
                 String immediate = cleanModelOutput(lastMsg.getText());
                 if (immediate != null && !immediate.isBlank() && !immediate.startsWith("call:")) {
                     finalAnswer.set(immediate);
-                    finishStream(queue, immediate, finished, finalAnswer, ctx);
+                    finishStream(queue, immediate, finished, finalAnswer, ctx, agentConfig);
                 } else {
-                    startNextRound(chatClient, conversation, queue, step, modelUsed, finalAnswer, finished, ctx);
+                    startNextRound(chatClient, conversation, queue, ctx, modelUsed, finalAnswer, finished, agentConfig);
                 }
             } else {
                 String answer = cleanModelOutput(lastMsg != null ? lastMsg.getText() : fullAssistant);
                 if (answer == null || answer.isBlank()) answer = fullAssistant;
                 finalAnswer.set(answer);
-                finishStream(queue, answer, finished, finalAnswer, ctx);
+                finishStream(queue, answer, finished, finalAnswer, ctx, agentConfig);
             }
         }).doOnError(e -> {
             log.error("Stream error", e);
-            finishStream(queue, "流式错误: " + e.getMessage(), finished, finalAnswer, ctx);
+            pushAndSaveStep(sessionId, agentId, ReActStepEvent.builder()
+                    .type("ERROR")
+                    .executionId(ctx.getExecutionId())
+                    .stepNumber(step)
+                    .description("流式错误")
+                    .detail(e.getMessage())
+                    .status("FAILED")
+                    .timestamp(System.currentTimeMillis())
+                    .build());
+            finishStream(queue, "流式错误: " + e.getMessage(), finished, finalAnswer, ctx, agentConfig);
         }).subscribe();
     }
 
     private void finishStream(BlockingQueue<CompletionChunk> queue, String answer, boolean[] finished,
-                              AtomicReference<String> finalAnswer, ExecutionContext ctx) {
+                              AtomicReference<String> finalAnswer, ExecutionContext ctx, AgentConfig agentConfig) {
         queue.offer(CompletionChunk.builder().delta("").last(true).build());
         finished[0] = true;
         String validAnswer = (answer != null && !answer.isBlank()) ? answer : finalAnswer.get();
         if (validAnswer == null || validAnswer.isBlank()) validAnswer = "模型未返回有效内容";
-        // 存储记忆使用默认 domain，流式版本暂未集成 agentConfig
-        storeConversationMemoryAsync(ctx, validAnswer, "general");
+
+        pushAndSaveStep(ctx.getUserInput().getSessionId(), ctx.getAttribute("agentId", String.class),
+                ReActStepEvent.builder()
+                        .type("COMPLETE")
+                        .executionId(ctx.getExecutionId())
+                        .stepNumber(ctx.getStepCounter().get())
+                        .description("执行完成")
+                        .status("SUCCESS")
+                        .timestamp(System.currentTimeMillis())
+                        .build());
+
+        String memoryDomain = (agentConfig != null) ? agentConfig.getMemoryDomain() : "general";
+        storeConversationMemoryAsync(ctx, validAnswer, memoryDomain);
+    }
+
+    // ==================== 事件推送与持久化 ====================
+    private void pushAndSaveStep(String sessionId, String agentId, ReActStepEvent event) {
+        pushStepEvent(sessionId, event);
+        CompletableFuture.runAsync(() -> {
+            try {
+                ReActStepRecord record = ReActStepRecord.builder()
+                        .id(UUID.randomUUID().toString())
+                        .agentId(agentId)
+                        .sessionId(sessionId)
+                        .executionId(event.getExecutionId())
+                        .stepNumber(event.getStepNumber())
+                        .type(event.getType())
+                        .description(event.getDescription())
+                        .detail(event.getDetail())
+                        .status(event.getStatus())
+                        .timestamp(event.getTimestamp())
+                        .build();
+                stepRepository.save(record);
+                String json = objectMapper.writeValueAsString(event);
+//                log.info("Pushing step event: {}", json);
+            } catch (Exception e) {
+                log.warn("存储步骤事件失败", e);
+            }
+        });
+    }
+
+    private void pushStepEvent(String sessionId, ReActStepEvent event) {
+        if (sessionId == null) return;
+        try {
+            Map<String, Object> message = Map.of(
+                    "type", "react_step",
+                    "executionId", event.getExecutionId(),
+                    "data", event
+            );
+            rippleHandler.sendToSession(sessionId, objectMapper.writeValueAsString(message));
+        } catch (JsonProcessingException e) {
+            log.warn("推送 ReActStepEvent 失败", e);
+        }
+    }
+
+    private List<ToolResponseMessage.ToolResponse> executeToolCalls(Message assistantMessage,
+                                                                    int currentStep,
+                                                                    ExecutionContext ctx,
+                                                                    String agentId) {
+        List<ToolResponseMessage.ToolResponse> toolResponses = new ArrayList<>();
+        String sessionId = ctx.getUserInput().getSessionId();
+
+        for (AssistantMessage.ToolCall toolCall : extractToolCalls(assistantMessage)) {
+            log.info("Executing tool: {} with args: {}", toolCall.name(), toolCall.arguments());
+
+            pushAndSaveStep(sessionId, agentId, ReActStepEvent.builder()
+                    .type("TOOL_CALL")
+                    .stepNumber(currentStep)
+                    .description("调用工具: " + toolCall.name())
+                    .executionId(ctx.getExecutionId())
+                    .detail(toolCall.arguments())
+                    .status("RUNNING")
+                    .timestamp(System.currentTimeMillis())
+                    .build());
+
+            String toolResult = toolExecutor.execute(toolCall);
+            toolResponses.add(new ToolResponseMessage.ToolResponse(toolCall.id(), toolCall.name(), toolResult));
+
+            pushAndSaveStep(sessionId, agentId, ReActStepEvent.builder()
+                    .type("TOOL_RESULT")
+                    .stepNumber(currentStep)
+                    .description("工具返回: " + toolCall.name())
+                    .executionId(ctx.getExecutionId())
+                    .detail(toolResult)
+                    .status("SUCCESS")
+                    .timestamp(System.currentTimeMillis())
+                    .build());
+        }
+        return toolResponses;
+    }
+
+    // ==================== 其他辅助方法 ====================
+    private String buildSystemPrompt(ExecutionContext ctx, AgentConfig agentConfig) {
+        if (agentConfig != null && agentConfig.getSystemPrompt() != null && !agentConfig.getSystemPrompt().isBlank()) {
+            return agentConfig.getSystemPrompt();
+        }
+        TaskContext taskCtx = ctx.toTaskContext();
+        taskCtx.setTaskType("react_conversation");
+        PromptContext context = promptPipeline.collect(taskCtx);
+        context.setAvailableTools(toolExecutor.getAvailableToolNames());
+        context.setToolDescriptions(toolExecutor.getToolDescriptions());
+        String prompt = promptPipeline.render(context);
+        return promptPipeline.compress(prompt);
+    }
+
+    private String generatePlanIfNeeded(ExecutionContext ctx, AgentConfig agentConfig) {
+        if (planningStrategy == null) return "";
+        String taskType = ctx.toTaskContext().getTaskType();
+        if ("code_generation".equals(taskType) || "project_refactor".equals(taskType)) {
+            try {
+                Map<String, Object> planCtx = Map.of(
+                        "projectPath", ctx.getAttribute("projectPath", String.class),
+                        "userInput", ctx.getUserInput().getText()
+                );
+                List<TaskPlan.Step> steps = planningStrategy.generatePlan(ctx.getUserInput().getText(), planCtx);
+                return formatPlan(steps);
+            } catch (Exception e) {
+                log.warn("任务规划生成失败: {}", e.getMessage());
+                return "";
+            }
+        }
+        return "";
+    }
+
+    private String formatPlan(List<TaskPlan.Step> steps) {
+        if (steps == null || steps.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder("【执行计划】\n");
+        for (int i = 0; i < steps.size(); i++) {
+            TaskPlan.Step step = steps.get(i);
+            sb.append(String.format("%d. %s (使用工具: %s)\n", i + 1, step.getDescription(), step.getTool()));
+        }
+        sb.append("请按照上述计划依次调用工具完成任务。\n");
+        return sb.toString();
+    }
+
+    private ToolCallback[] resolveToolCallbacks(AgentConfig agentConfig) {
+        if (!properties.isToolUseEnabled()) return new ToolCallback[0];
+        List<ToolCallback> allTools = toolExecutor.getAvailableTools();
+        if (agentConfig == null || agentConfig.getTools() == null || agentConfig.getTools().isEmpty()) {
+            return deduplicate(allTools);
+        }
+        Set<String> allowed = new HashSet<>(agentConfig.getTools());
+        List<ToolCallback> filtered = allTools.stream()
+                .filter(tc -> allowed.contains(tc.getName()))
+                .collect(Collectors.toList());
+        return deduplicate(filtered);
+    }
+
+    private ToolCallback[] getToolCallbacks() {
+        if (!properties.isToolUseEnabled()) return new ToolCallback[0];
+        return deduplicate(toolExecutor.getAvailableTools());
+    }
+
+    private ToolCallback[] deduplicate(List<ToolCallback> tools) {
+        Map<String, ToolCallback> unique = new LinkedHashMap<>();
+        tools.forEach(tc -> unique.putIfAbsent(tc.getName(), tc));
+        return unique.values().toArray(new ToolCallback[0]);
     }
 
     private void storeConversationMemoryAsync(ExecutionContext ctx, String finalAnswer, String memoryDomain) {
         CompletableFuture.runAsync(() -> {
             try {
-                if (finalAnswer == null || finalAnswer.isBlank()) {
-                    log.warn("Empty answer, skip memory storage");
-                    return;
-                }
+                if (finalAnswer == null || finalAnswer.isBlank()) return;
                 String userId = ctx.getUserId() != null && !ctx.getUserId().isBlank() ? ctx.getUserId() : "default-user";
                 MemoryEntry entry = MemoryEntry.builder()
                         .userId(userId)
@@ -431,18 +586,17 @@ public class ReactOrchestrator implements Orchestrator {
         });
     }
 
-    // ----- 原有工具/文本处理方法保持不变 -----
     private String cleanStreamText(String raw) {
         if (raw == null) return "";
         return raw.replaceAll("call:\\w+\\{[^}]*\\}", "")
-                  .replaceAll("<tool_call\\|>|<\\|tool_response>", "");
+                .replaceAll("<tool_call\\|>|<\\|tool_response>", "");
     }
 
     private String cleanModelOutput(String text) {
         if (text == null) return "";
         return text.replaceAll("call:\\w+\\{[^}]*\\}", "")
-                   .replaceAll("<tool_call\\|>|<\\|tool_response>", "")
-                   .replaceAll("}", "").trim();
+                .replaceAll("<tool_call\\|>|<\\|tool_response>", "")
+                .replaceAll("}", "").trim();
     }
 
     private ChatResponse callLLMWithRetry(ChatClient chatClient, List<Message> conversation,
@@ -453,9 +607,7 @@ public class ReactOrchestrator implements Orchestrator {
                 return chatClient.prompt()
                         .messages(conversation)
                         .tools(tools)
-                        .options(ToolCallingChatOptions.builder()
-                                .internalToolExecutionEnabled(false)
-                                .build())
+                        .options(ToolCallingChatOptions.builder().internalToolExecutionEnabled(false).build())
                         .call()
                         .chatResponse();
             } catch (ResourceAccessException e) {
@@ -474,16 +626,6 @@ public class ReactOrchestrator implements Orchestrator {
         return null;
     }
 
-    private List<ToolResponseMessage.ToolResponse> executeToolCalls(Message assistantMessage) {
-        List<ToolResponseMessage.ToolResponse> toolResponses = new ArrayList<>();
-        for (AssistantMessage.ToolCall toolCall : extractToolCalls(assistantMessage)) {
-            log.info("Executing tool: {} with args: {}", toolCall.name(), toolCall.arguments());
-            String toolResult = toolExecutor.execute(toolCall);
-            toolResponses.add(new ToolResponseMessage.ToolResponse(toolCall.id(), toolCall.name(), toolResult));
-        }
-        return toolResponses;
-    }
-
     private boolean hasToolCalls(Message message) {
         return message instanceof AssistantMessage am && am.hasToolCalls();
     }
@@ -492,7 +634,7 @@ public class ReactOrchestrator implements Orchestrator {
         return message instanceof AssistantMessage am ? am.getToolCalls() : List.of();
     }
 
-    // ----- 日志方法保持不变 -----
+    // ---------- 日志方法 ----------
     private void logReActStep(int step, List<Message> conversation) {
         if (!verboseLogging) return;
         log.debug("ReAct step {}/{}", step, properties.getMaxSteps());
@@ -511,7 +653,7 @@ public class ReactOrchestrator implements Orchestrator {
         if (hasToolCalls(assistantMessage)) {
             List<AssistantMessage.ToolCall> toolCalls = extractToolCalls(assistantMessage);
             log.info("=== LLM 请求调用工具 ({} 个) ===", toolCalls.size());
-            for (AssistantMessage.ToolCall tc : toolCalls) log.info("  工具名: {}\n  参数: {}", tc.name(), tc.arguments());
+            toolCalls.forEach(tc -> log.info("  工具名: {}\n  参数: {}", tc.name(), tc.arguments()));
         } else {
             String text = assistantMessage.getText();
             String preview = text.length() > 300 ? text.substring(0, 300) + "..." : text;
@@ -522,10 +664,10 @@ public class ReactOrchestrator implements Orchestrator {
     private void logToolResponses(List<ToolResponseMessage.ToolResponse> toolResponses) {
         if (!verboseLogging) return;
         log.info("=== 工具执行结果已反馈给 LLM ===");
-        for (ToolResponseMessage.ToolResponse tr : toolResponses) {
+        toolResponses.forEach(tr -> {
             String preview = tr.responseData().length() > 200 ? tr.responseData().substring(0, 200) + "..." : tr.responseData();
             log.info("  工具 {} 返回: {}", tr.name(), preview);
-        }
+        });
     }
 
     private void logCompletion(int step, String finalAnswer, String modelUsed) {
