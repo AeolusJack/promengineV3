@@ -2,6 +2,7 @@ package com.thirdexploration.promengine.runtime.review;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.thirdexploration.promengine.core.agent.ReviewRequest;
+import com.thirdexploration.promengine.core.agent.ReviewService;
 import com.thirdexploration.promengine.neuro.web.RippleWebSocketHandler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,7 +17,7 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class ReviewHandler {
+public class ReviewHandler implements ReviewService {
 
     private final RippleWebSocketHandler webSocketHandler;
     private final ObjectMapper objectMapper;

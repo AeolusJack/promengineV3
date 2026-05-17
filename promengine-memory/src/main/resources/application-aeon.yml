@@ -15,7 +15,7 @@ aeon:
           steps:
             - type: query-rewrite
               llm-enabled: true
-              model: gemma4-custom:q4
+              model:  qwen2.5:14b #gemma4-custom:q4
         - name: deep-llm
           steps:
             - type: intent-parse

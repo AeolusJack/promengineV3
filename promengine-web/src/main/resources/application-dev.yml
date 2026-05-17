@@ -29,7 +29,7 @@ promengine:
         type: ollama
         endpoint: http://localhost:11434
         models:
-          - name: gemma4-custom:q4
+          - name:  qwen2.5:14b #gemma4-custom:q4
             cost-per-1k-tokens: 0.0
           - name: qwen2.5:14b
             cost-per-1k-tokens: 0.0

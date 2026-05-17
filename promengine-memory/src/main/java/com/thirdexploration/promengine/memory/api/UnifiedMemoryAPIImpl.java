@@ -11,15 +11,18 @@ import com.thirdexploration.promengine.memory.storage.*;
 import com.thirdexploration.promengine.memory.util.MemoryDeduplicator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 /**
  * 统一记忆 API 实现，整合所有记忆层。
@@ -41,7 +44,9 @@ public class UnifiedMemoryAPIImpl implements UnifiedMemoryAPI {
     private final MemoryDeduplicator deduplicator;
     private final EmbeddingService embeddingService;
     private final AeonMemoryProperties properties;
+    private final ChatClient.Builder chatClientBuilder;
 
+    // 构造器注入（通过 @RequiredArgsConstructor 自动加入）
     private final LuceneIndexService luceneIndexService;
     @Override
     @Transactional
@@ -117,17 +122,7 @@ public class UnifiedMemoryAPIImpl implements UnifiedMemoryAPI {
         semanticMemory.updateStrength(memoryId, newStrength);
     }
 
-//    @Override
-//    public MemoryStats getStats(String userId, String domain) {
-//        Map<String, Long> layerCounts = new HashMap<>();
-//        // 简化实现
-//        return MemoryStats.builder()
-//                .userId(userId)
-//                .domain(domain)
-//                .layerCounts(layerCounts)
-//                .totalRecords(0)
-//                .build();
-//    }
+
 
     @Override
     public void promoteWorkingToEpisodic(String sessionId) {
@@ -141,10 +136,78 @@ public class UnifiedMemoryAPIImpl implements UnifiedMemoryAPI {
 
     @Override
     public void reflect() {
-        log.info("Starting memory reflection...");
-        // 调用蒸馏等后台任务
+        log.info("Starting memory reflection (distillation)...");
+        try {
+            // 1. 获取近7天、重要性>0.6的情景记忆
+            List<MemoryRecord> episodicRecords = episodicMemory.queryByTimeRange(
+                    null, "general", null,
+                    Instant.now().minus(7, java.time.temporal.ChronoUnit.DAYS),
+                    Instant.now(),
+                    200, null
+            );
+            if (episodicRecords.isEmpty()) return;
+
+            // 2. 按会话分组（取前10个会话，避免任务过重）
+            Map<String, List<MemoryRecord>> grouped = episodicRecords.stream()
+                    .filter(r -> r.getSessionId() != null)
+                    .collect(Collectors.groupingBy(MemoryRecord::getSessionId));
+            int count = 0;
+            for (Map.Entry<String, List<MemoryRecord>> entry : grouped.entrySet()) {
+                if (count++ > 10) break;
+                List<MemoryRecord> records = entry.getValue();
+                if (records.size() < 3) continue;
+
+                String combined = records.stream()
+                        .map(MemoryRecord::getContent)
+                        .collect(Collectors.joining("\n---\n"));
+                String summary = summarizeWithLLM(combined);
+                if (summary == null || summary.isBlank()) continue;
+
+                // 创建语义记忆
+                MemoryRecord semRecord = MemoryRecord.builder()
+                        .id("sem_reflect_" + UUID.randomUUID().toString().replace("-", ""))
+                        .userId(records.get(0).getUserId())
+                        .content(summary)
+                        .summary(truncate(summary, 200))
+                        .memoryType("semantic")
+                        .layer("semantic")
+                        .domain("general")
+                        .importance(0.85f)
+                        .strength(1.0)
+                        .utilityScore(0.8)
+                        .safetyScore(0.9)
+                        .timestamp(Instant.now())
+                        .provenance(Provenance.distilled("system", records.stream().map(MemoryRecord::getId).toList()))
+                        .build();
+                semanticMemory.store(semRecord);
+
+                // 可选：降低原始情景记忆强度（而非直接删除）
+                records.forEach(r -> episodicMemory.updateStrength(r.getId(), 0.3f));
+            }
+        } catch (Exception e) {
+            log.error("Reflection failed", e);
+        }
         log.info("Memory reflection completed");
     }
+
+    /**
+     * 调用本地 Ollama 轻量模型生成摘要
+     */
+    private String summarizeWithLLM(String content) {
+        if (content.length() < 100) return content; // 太短不需要摘要
+        try {
+            ChatClient client = chatClientBuilder.build();
+            String prompt = "请用一段话总结以下对话内容的核心要点（不超过150字）：\n" +
+                    content.substring(0, Math.min(content.length(), 3000));
+            String result = client.prompt(prompt).call().content();
+            return result != null ? result.trim() : "";
+        } catch (Exception e) {
+            log.warn("LLM summarization failed, falling back to truncation: {}", e.getMessage());
+            return content.length() > 200 ? content.substring(0, 200) + "..." : content;
+        }
+    }
+
+
 
     private boolean shouldStore(String content) {
         if (properties.getRetrieval().isDeduplicationEnabled() && deduplicator.isDuplicate(content)) {

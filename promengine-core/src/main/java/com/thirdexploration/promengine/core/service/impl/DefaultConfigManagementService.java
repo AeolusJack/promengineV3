@@ -18,6 +18,7 @@ import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -32,11 +33,12 @@ public class DefaultConfigManagementService implements ConfigManagementService {
     // 配置变更历史，key 为 changeId
     private final Map<String, ConfigChangeRecord> changeHistory = new ConcurrentHashMap<>();
     // 用户配置快照，key 为版本号（时间戳字符串）
-    private final List<ConfigSnapshot> snapshots = new ArrayList<>();
+   // private final List<ConfigSnapshot> snapshots = new ArrayList<>();
 
     private static final Path CONFIG_FILE_PATH = Paths.get("./configs/promengine-config.json");
     private static final Path SNAPSHOT_DIR = Paths.get("./configs/snapshots");
-
+    private final List<ConfigSnapshot> snapshots = new CopyOnWriteArrayList<>();
+    private static final int MAX_SNAPSHOTS = 50;
     @PostConstruct
     public void init() {
         try {
@@ -72,7 +74,6 @@ public class DefaultConfigManagementService implements ConfigManagementService {
     @Override
     public ConfigUpdateResult updateConfig(String userId, Map<String, Object> updates) {
         String changeId = IdGenerator.generateWithPrefix("cfg");
-        // 记录变更前快照
         String version = String.valueOf(System.currentTimeMillis());
         ConfigSnapshot snapshot = ConfigSnapshot.builder()
                 .version(version)
@@ -80,6 +81,10 @@ public class DefaultConfigManagementService implements ConfigManagementService {
                 .config(new HashMap<>(currentConfig))
                 .build();
         snapshots.add(snapshot);
+        // 保持快照数量上限
+        if (snapshots.size() > MAX_SNAPSHOTS) {
+            snapshots.remove(0);
+        }
         saveSnapshot(snapshot);
 
         // 应用更新

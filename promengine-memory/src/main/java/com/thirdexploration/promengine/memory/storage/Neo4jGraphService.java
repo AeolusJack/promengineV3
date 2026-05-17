@@ -47,6 +47,48 @@ public class Neo4jGraphService {
         }
     }
 
+
+
+    /**
+     * 获取种子节点集合内部的因果边，以及种子节点到邻居节点的边。
+     * 返回的边包含 sourceId, targetId, relationType。
+     */
+    public List<Map<String, String>> getCausalEdges(List<String> seedIds, List<String> neighborIds, int maxEdges) {
+        if (CollectionUtils.isEmpty(seedIds) || CollectionUtils.isEmpty(neighborIds)) {
+            return Collections.emptyList();
+        }
+        List<Map<String, String>> edges = executeWithRetry(session -> {
+            // 查询种子节点内部及种子与邻居之间的 CAUSAL_LINK 关系
+            String query =
+                    "MATCH (a:Memory)-[r:CAUSAL_LINK]-(b:Memory) " +
+                            "WHERE a.id IN $seeds AND b.id IN $allIds " +
+                            "RETURN a.id AS sourceId, b.id AS targetId, type(r) AS relationType, r.weight AS weight " +
+                            "LIMIT $limit";
+            List<String> allIds = new ArrayList<>();
+            allIds.addAll(seedIds);
+            allIds.addAll(neighborIds);
+            Result result = session.run(query, Values.parameters(
+                    "seeds", seedIds,
+                    "allIds", allIds,
+                    "limit", maxEdges
+            ));
+            List<Map<String, String>> edgeList = new ArrayList<>();
+            while (result.hasNext()) {
+                Record rec = result.next();
+                Map<String, String> edge = new HashMap<>();
+                edge.put("sourceId", rec.get("sourceId").asString());
+                edge.put("targetId", rec.get("targetId").asString());
+                edge.put("relationType", rec.get("relationType").asString());
+                edge.put("weight", String.valueOf(rec.get("weight").asDouble()));
+                edgeList.add(edge);
+            }
+            return edgeList;
+        }, "getCausalEdges");
+        return edges != null ? edges : Collections.emptyList();
+    }
+
+
+
     private <T> T executeWithRetry(ThrowingFunction<Session, T> action, String operationName) {
         if (!isAvailable()) {
             log.warn("Neo4j unavailable, skip {}", operationName);

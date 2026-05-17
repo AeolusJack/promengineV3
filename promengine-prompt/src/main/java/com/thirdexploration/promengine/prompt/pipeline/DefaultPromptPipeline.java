@@ -4,6 +4,7 @@ import com.thirdexploration.promengine.core.CognitivePhysiology;
 import com.thirdexploration.promengine.core.ToolInfoProvider;
 import com.thirdexploration.promengine.core.domain.TaskContext;
 import com.thirdexploration.promengine.memory.api.UnifiedMemoryAPI;
+import com.thirdexploration.promengine.memory.injection.MemoryInjectionPipeline;
 import com.thirdexploration.promengine.memory.model.MemoryEntry;
 import com.thirdexploration.promengine.memory.model.MemoryQuery;
 import com.thirdexploration.promengine.prompt.RenderEngine;
@@ -13,6 +14,7 @@ import com.thirdexploration.promengine.prompt.config.PromptProperties;
 import com.thirdexploration.promengine.prompt.core.PromptContext;
 import com.thirdexploration.promengine.prompt.core.PromptContextBuilder;
 import com.thirdexploration.promengine.prompt.core.PromptPipeline;
+import com.thirdexploration.promengine.prompt.graph.GraphContextEnhancer;
 import com.thirdexploration.promengine.prompt.model.PromptTemplate;
 
 import com.thirdexploration.promengine.prompt.window.ContextWindowManager;
@@ -97,6 +99,8 @@ public class DefaultPromptPipeline implements PromptPipeline, PromptContextBuild
                 .build();
     }
 
+    private  final  GraphContextEnhancer graphEnhancer;
+    private  final  MemoryInjectionPipeline memoryInjectionPipeline;
     @Override
     public String render(PromptContext context) {
         String templateId = context.getTaskType() != null ? context.getTaskType() : properties.getDefaultTemplate();
@@ -104,8 +108,34 @@ public class DefaultPromptPipeline implements PromptPipeline, PromptContextBuild
         if (template == null) {
             template = templateRegistry.get(properties.getDefaultTemplate());
         }
+
+        // 1. 处理记忆注入（生成单独的记忆上下文）
+        String memorySection = buildMemorySection(context.getMemories(), context.getUserInput());
+
+        // 2. 图上下文
+        String graphSection = (graphEnhancer != null)
+                ? graphEnhancer.buildGraphSection(context.getMemories(), context.getUserInput())
+                : "";
+        // 3. 构建变量，将记忆段和图段作为单独变量
         Map<String, Object> variables = buildVariables(context);
+        variables.put("memory_section", memorySection);
+        variables.put("graph_section", graphSection);
+
+        // 4. 渲染模板（模板中可使用 {{ memory_section }} 和 {{ graph_section }}）
         return renderEngine.render(template, variables);
+    }
+
+    private String buildMemorySection(List<MemoryEntry> memories, String query) {
+        if (memories.isEmpty()) return "";
+        // 使用新的注入管道
+        List<MemoryInjectionPipeline.MemoryInjectionItem> items = memoryInjectionPipeline.process(memories, query, 2000);
+        if (items.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder("\n<background_knowledge>\n");
+        for (var item : items) {
+            sb.append(String.format("- [%s] %s\n", item.layer(), item.summary()));
+        }
+        sb.append("</background_knowledge>\n");
+        return sb.toString();
     }
 
     @Override

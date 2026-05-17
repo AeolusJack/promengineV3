@@ -23,10 +23,13 @@ public class ContextWindowManager {
     public List<MemoryEntry> trimMemories(List<MemoryEntry> memories, int maxChars) {
         if (memories == null || memories.isEmpty()) return List.of();
 
+
+         // 改为降序，让高重要性记忆排前面
         List<MemoryEntry> sorted = memories.stream()
-                .sorted(Comparator.comparingDouble(m -> 
-                    ((m.getImportance()) * 0.5 + (m.getStrength() * 0.5))))
-                .collect(Collectors.toList());
+                .sorted(Comparator.comparingDouble(
+                        (MemoryEntry m) -> m.getImportance() * 0.5 + m.getStrength() * 0.5
+                ).reversed())
+                .toList();
 
         List<MemoryEntry> trimmed = new java.util.ArrayList<>();
         int totalChars = 0;

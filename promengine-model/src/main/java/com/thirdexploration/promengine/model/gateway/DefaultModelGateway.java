@@ -1,7 +1,9 @@
 package com.thirdexploration.promengine.model.gateway;
 
 import com.thirdexploration.promengine.core.ModelGateway;
+import com.thirdexploration.promengine.core.cache.SemanticCache;
 import com.thirdexploration.promengine.core.domain.*;
+import com.thirdexploration.promengine.core.embedding.EmbeddingService;
 import com.thirdexploration.promengine.core.exception.ModelUnavailableException;
 import com.thirdexploration.promengine.model.config.ModelGatewayProperties;
 import com.thirdexploration.promengine.model.gateway.circuit.CircuitBreaker;
@@ -26,18 +28,31 @@ public class DefaultModelGateway implements ModelGateway {
     private final LoadAwareRouter loadAwareRouter;
     private final ModelGatewayProperties properties;
     private final Map<String, CircuitBreaker> circuitBreakers = new ConcurrentHashMap<>();
+    // 在 DefaultModelGateway 中增加字段
+    private final SemanticCache semanticCache;
+    private final EmbeddingService embeddingService; // 需定义接口
+
 
     @Override
     public CompletionResult complete(CompletionRequest request) {
+        // 1. 生成提示词向量
+        float[] queryVector = embeddingService.embed(request.getPrompt());
+        // 2. 查缓存
+        CompletionResult cached = semanticCache.get(request.getPrompt(), queryVector);
+        if (cached != null) {
+            log.debug("Semantic cache hit for prompt: {}", request.getPrompt().substring(0, Math.min(50, request.getPrompt().length())));
+            return cached;
+        }
+        // 3. 正常路由调用
         String selectedProviderId = selectProvider(request);
         ModelAdapter adapter = providerRegistry.getAdapter(selectedProviderId);
-        if (adapter == null) {
-            throw new ModelUnavailableException("No available provider for request");
-        }
-        CircuitBreaker cb = circuitBreakers.computeIfAbsent(selectedProviderId,
-                id -> new CircuitBreaker(id, properties.getCircuitBreaker()));
+        if (adapter == null) throw new ModelUnavailableException("No available provider for request");
+        CircuitBreaker cb = circuitBreakers.computeIfAbsent(selectedProviderId, id -> new CircuitBreaker(id, properties.getCircuitBreaker()));
         try {
-            return cb.execute(() -> adapter.complete(request));
+            CompletionResult result = cb.execute(() -> adapter.complete(request));
+            // 4. 存入缓存
+            semanticCache.put(request.getPrompt(), queryVector, result);
+            return result;
         } catch (Exception e) {
             log.warn("Provider {} failed, attempting fallback", selectedProviderId, e);
             return executeWithFallback(request, selectedProviderId);

@@ -3,10 +3,10 @@ package com.thirdexploration.promengine.executor;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.thirdexploration.promengine.core.AgentConfig;
-import com.thirdexploration.promengine.core.agent.AgentConfigProvider;
-import com.thirdexploration.promengine.core.agent.TaskPlan;
-import com.thirdexploration.promengine.core.agent.TaskPlanningStrategy;
+import com.thirdexploration.promengine.core.agent.*;
 import com.thirdexploration.promengine.core.cache.StreamFragmentStore;
+import com.thirdexploration.promengine.core.context.ConversationContext;
+import com.thirdexploration.promengine.core.context.ConversationContextBuilder;
 import com.thirdexploration.promengine.core.domain.*;
 import com.thirdexploration.promengine.executor.config.OrchestratorProperties;
 import com.thirdexploration.promengine.executor.event.StreamCompletedEvent;
@@ -40,7 +40,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -64,6 +63,9 @@ public class ReactOrchestrator implements Orchestrator {
     private final ReActStepRepository stepRepository;
     private final StreamFragmentStore streamFragmentStore;
     private final ApplicationEventPublisher eventPublisher;
+    private final ReviewService reviewHandler;
+    private final ChatHistoryProvider chatHistoryProvider;   // 通过构造器注入
+    private final ConversationContextBuilder conversationContextBuilder;
 
 
     @Autowired(required = false)
@@ -105,6 +107,38 @@ public class ReactOrchestrator implements Orchestrator {
         }
     }
 
+    private String applyCriticIfNeeded(String candidateAnswer, List<Message> conversation,
+                                       ChatClient chatClient, ExecutionContext ctx) {
+        if (!properties.isCriticEnabled()) return candidateAnswer;
+        if (candidateAnswer == null || candidateAnswer.isBlank()) return candidateAnswer;
+
+        // 构建 Critic Prompt：让模型审查自己的回答
+        String criticPrompt = String.format(
+                "你是一个严格的审查员。请检查以下回答是否存在事实错误、逻辑矛盾或未完成的部分。\n" +
+                        "如果回答完美，请回复 \"PASS\"。\n" +
+                        "如果发现问题，请指出问题并给出修正后的完整回答。\n\n" +
+                        "【原始回答】\n%s\n\n【审查意见】", candidateAnswer);
+
+        try {
+            ChatResponse response = chatClient.prompt()
+                    .user(criticPrompt)
+                    .call()
+                    .chatResponse();
+            String criticOutput = response.getResult().getOutput().getText();
+            if (criticOutput == null || criticOutput.isBlank()) return candidateAnswer;
+
+            // 若模型返回 PASS，则保留原答案
+            if (criticOutput.trim().equalsIgnoreCase("PASS")) {
+                return candidateAnswer;
+            }
+            // 否则使用审查后的回答
+            log.info("Critic found issues, using revised answer.");
+            return criticOutput.trim();
+        } catch (Exception e) {
+            log.warn("Critic step failed, using original answer", e);
+            return candidateAnswer;
+        }
+    }
     @Override
     public CompletableFuture<Response> execute(ExecutionContext ctx) {
         String agentId = ctx.getAttribute("agentId", String.class);
@@ -121,7 +155,19 @@ public class ReactOrchestrator implements Orchestrator {
         }
 
         List<Message> conversation = new ArrayList<>();
-        conversation.add(new SystemMessage(systemPrompt));
+        // 构建三层上下文
+        ConversationContext context = conversationContextBuilder.buildContext(
+                ctx.getUserInput().getSessionId(),
+                properties.getContextWindowSize()); // 窗口大小从配置读取
+
+        String enhancedSystemPrompt = systemPrompt;
+        if (context != null) {
+            String ctxSection = context.toPromptSection();
+            if (!ctxSection.isBlank()) {
+                enhancedSystemPrompt = systemPrompt + "\n\n" + ctxSection;
+            }
+        }
+        conversation.add(new SystemMessage(enhancedSystemPrompt));
         conversation.add(new UserMessage(ctx.getUserInput().getText()));
 
         ChatClient chatClient = chatClientBuilder.build();
@@ -176,6 +222,9 @@ public class ReactOrchestrator implements Orchestrator {
             if (finalAnswer == null) {
                 finalAnswer = "任务执行超过最大步数限制，已终止。";
             }
+            // ===== 新增：Critic 审查 =====
+            finalAnswer = applyCriticIfNeeded(finalAnswer, conversation, chatClient, ctx);
+             // ===== 结束 =====
         } finally {
             if (finalAnswer != null) {
                 storeConversationMemoryAsync(ctx, finalAnswer, memoryDomain);
@@ -211,7 +260,19 @@ public class ReactOrchestrator implements Orchestrator {
         }
 
         List<Message> conversation = new ArrayList<>();
-        conversation.add(new SystemMessage(systemPrompt));
+        // 构建三层上下文
+        ConversationContext context = conversationContextBuilder.buildContext(
+                ctx.getUserInput().getSessionId(),
+                properties.getContextWindowSize()); // 窗口大小从配置读取
+
+        String enhancedSystemPrompt = systemPrompt;
+        if (context != null) {
+            String ctxSection = context.toPromptSection();
+            if (!ctxSection.isBlank()) {
+                enhancedSystemPrompt = systemPrompt + "\n\n" + ctxSection;
+            }
+        }
+        conversation.add(new SystemMessage(enhancedSystemPrompt));
         conversation.add(new UserMessage(ctx.getUserInput().getText()));
         ChatClient chatClient = chatClientBuilder.build();
 
@@ -255,6 +316,8 @@ public class ReactOrchestrator implements Orchestrator {
             if (finalAnswer.get() != null) {
                 storeConversationMemoryAsync(ctx, finalAnswer.get(), memoryDomain);
             }
+            //todo 需要做
+               //applyCriticIfNeeded("",conversation,chatClient,ctx);
         }
     }
 
@@ -369,8 +432,9 @@ public class ReactOrchestrator implements Orchestrator {
                 conversation.add(new ToolResponseMessage(toolResponses));
                 String immediate = cleanModelOutput(lastMsg.getText());
                 if (immediate != null && !immediate.isBlank() && !immediate.startsWith("call:")) {
-                    finalAnswer.set(immediate);
-                    finishStream(queue, immediate, finished, finalAnswer, ctx, agentConfig);
+                    String reviewedImmediate = applyCriticIfNeeded(immediate, conversation, chatClient, ctx);
+                    finalAnswer.set(reviewedImmediate);
+                    finishStream(queue, reviewedImmediate, finished, finalAnswer, ctx, agentConfig);
                 } else {
                     startNextRound(chatClient, conversation, queue, ctx, modelUsed, finalAnswer, finished, agentConfig);
                 }
@@ -387,8 +451,9 @@ public class ReactOrchestrator implements Orchestrator {
                     queue.offer(CompletionChunk.builder().delta(answer).last(false).build());
                     streamFragmentStore.addFragment(ctx.getExecutionId(), answer);
                 }
-                finalAnswer.set(answer);
-                finishStream(queue, answer, finished, finalAnswer, ctx, agentConfig);
+                String reviewedAnswer = applyCriticIfNeeded(answer, conversation, chatClient, ctx);
+                finalAnswer.set(reviewedAnswer);
+                finishStream(queue, reviewedAnswer, finished, finalAnswer, ctx, agentConfig);
             }
         }).doOnError(e -> {
             log.error("Stream error", e);
@@ -406,32 +471,24 @@ public class ReactOrchestrator implements Orchestrator {
         }).subscribe();
     }
 
-    private void finishStream(BlockingQueue<CompletionChunk> queue, String answer, boolean[] finished,
-                              AtomicReference<String> finalAnswer, ExecutionContext ctx, AgentConfig agentConfig) {
+
+    private void finishStream(BlockingQueue<CompletionChunk> queue, String answer, boolean[] finished, AtomicReference<String> finalAnswer, ExecutionContext ctx, AgentConfig agentConfig) {
         if (finished[0]) return;
         finished[0] = true;
-
         String validAnswer = (answer != null && !answer.isBlank()) ? answer : finalAnswer.get();
         if (validAnswer == null || validAnswer.isBlank()) {
             validAnswer = "任务执行完成，未生成文本回复。";
         }
-
-        log.info("Finishing stream with answer: {}", validAnswer);
-        // 推送最终内容
+        // 只发送最终内容（非 last），然后发送一个空内容且 last=true 的 chunk 表示结束
         queue.offer(CompletionChunk.builder().delta(validAnswer).last(false).build());
-        // 发送结束标记
-        queue.offer(CompletionChunk.builder().delta("[DONE]").last(false).build());
         queue.offer(CompletionChunk.builder().delta("").last(true).build());
-
         streamFragmentStore.markCompleted(ctx.getExecutionId());
-
-        // 发布事件，由监听器保存到 chat_messages（独立事务）
-        eventPublisher.publishEvent(new StreamCompletedEvent(this, ctx.getExecutionId(),
+        eventPublisher.publishEvent(new StreamCompletedEvent(this,
+                ctx.getExecutionId(),
                 ctx.getUserInput().getSessionId(),
                 ctx.getUserId() != null ? ctx.getUserId() : "default-user",
                 validAnswer));
-
-        // 原有步骤事件和记忆存储
+        // 步骤事件及记忆存储保持不变
         pushAndSaveStep(ctx.getUserInput().getSessionId(), ctx.getAttribute("agentId", String.class),
                 ReActStepEvent.builder()
                         .type("COMPLETE")
@@ -441,7 +498,6 @@ public class ReactOrchestrator implements Orchestrator {
                         .status("SUCCESS")
                         .timestamp(System.currentTimeMillis())
                         .build());
-
         String memoryDomain = (agentConfig != null) ? agentConfig.getMemoryDomain() : "general";
         storeConversationMemoryAsync(ctx, validAnswer, memoryDomain);
     }
@@ -484,29 +540,36 @@ public class ReactOrchestrator implements Orchestrator {
         }
     }
 
-    private List<ToolResponseMessage.ToolResponse> executeToolCalls(Message assistantMessage,
-                                                                    int currentStep,
-                                                                    ExecutionContext ctx,
-                                                                    String agentId) {
+
+
+    private List<ToolResponseMessage.ToolResponse> executeToolCalls(Message assistantMessage, int currentStep, ExecutionContext ctx, String agentId) {
         List<ToolResponseMessage.ToolResponse> toolResponses = new ArrayList<>();
         String sessionId = ctx.getUserInput().getSessionId();
-
         for (AssistantMessage.ToolCall toolCall : extractToolCalls(assistantMessage)) {
-            log.info("Executing tool: {} with args: {}", toolCall.name(), toolCall.arguments());
-
-            pushAndSaveStep(sessionId, agentId, ReActStepEvent.builder()
-                    .type("TOOL_CALL")
-                    .stepNumber(currentStep)
-                    .description("调用工具: " + toolCall.name())
-                    .executionId(ctx.getExecutionId())
-                    .detail(toolCall.arguments())
-                    .status("RUNNING")
-                    .timestamp(System.currentTimeMillis())
-                    .build());
-
+            // 获取工具定义以检查是否需要审核
+            Optional<ToolRegistry.RegisteredTool> resolved = toolRegistry.resolve(toolCall.name(), null);
+            boolean needReview = resolved.map(rt -> rt.definition().getSandboxPolicy() != null &&
+                    rt.definition().getSandboxPolicy().isRequireConfirmation()).orElse(false);
+            if (needReview) {
+                String decision = null;
+                try {
+                    ReviewRequest req = new ReviewRequest("tool_execution",
+                            "即将执行工具: " + toolCall.name(),
+                            toolCall.arguments(),
+                            List.of("approve", "reject"), 600);
+                    decision = reviewHandler.requestReview(sessionId, req).get(600, TimeUnit.SECONDS);
+                } catch (Exception e) {
+                    decision = "timeout";
+                }
+                if (!"approve".equals(decision)) {
+                    toolResponses.add(new ToolResponseMessage.ToolResponse(toolCall.id(), toolCall.name(),
+                            "用户拒绝执行或审核超时"));
+                    continue;
+                }
+            }
+            // 正常执行工具
             String toolResult = toolExecutor.execute(toolCall);
             toolResponses.add(new ToolResponseMessage.ToolResponse(toolCall.id(), toolCall.name(), toolResult));
-
             pushAndSaveStep(sessionId, agentId, ReActStepEvent.builder()
                     .type("TOOL_RESULT")
                     .stepNumber(currentStep)
@@ -519,6 +582,10 @@ public class ReactOrchestrator implements Orchestrator {
         }
         return toolResponses;
     }
+
+
+
+
 
     // ==================== 其他辅助方法 ====================
     private String buildSystemPrompt(ExecutionContext ctx, AgentConfig agentConfig) {

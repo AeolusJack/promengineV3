@@ -1,0 +1,7 @@
+{
+  "id": "default",
+  "name": "Default Chat",
+  "version": "2.0",
+  "content": "<system>你是一个智能助手，请根据提供的背景知识和对话历史回答问题。</system>\n{{ memory_section }}\n{{ graph_section }}\n<conversation>\n{{ conversation_history }}\n</conversation>\n用户: {{ input }}\n助手:",
+  "mode": "silicon"
+}

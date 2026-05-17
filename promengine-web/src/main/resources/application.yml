@@ -12,7 +12,7 @@ spring:
       base-url: http://localhost:11434
       chat:
         enabled: true
-        model: gemma4-custom:q4
+        model:  qwen2.5:14b #gemma4-custom:q4
       embedding:
         enabled: true
         model: nomic-embed-text
@@ -55,7 +55,7 @@ promengine:
         models:
           - name: qwen2.5:14b
             cost-per-1k-tokens: 0.0
-          - name: gemma4-custom:q4
+          - name: qwen2.5:14b #gemma4-custom:q4
             cost-per-1k-tokens: 0.0
     routing:
       strategy: semantic-budget-aware

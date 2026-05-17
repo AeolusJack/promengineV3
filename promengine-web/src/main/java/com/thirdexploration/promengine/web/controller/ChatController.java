@@ -103,23 +103,35 @@ public class ChatController {
             }
         }, 30, 30, TimeUnit.SECONDS);
 
-        CompletableFuture.runAsync(() -> {
+        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
             try {
                 executeStream(request, uid, executionId, input, emitter, completed);
             } catch (Exception e) {
                 log.error("Fatal error in stream processing", e);
-                safeCompleteWithError(emitter, e, completed);
+                if (!completed.get()) {
+                    safeSendEvent(emitter, "[DONE]", completed);
+                    safeCompleteWithError(emitter, e, completed);
+                }
             } finally {
                 heartbeatExecutor.shutdown();
             }
         }, streamExecutor);
 
+       // 兜底保障：无论 executeStream 是否正常结束，都尝试发送 DONE 并完成 emitter
+        future.whenComplete((v, ex) -> {
+            if (!completed.get()) {
+                log.warn("Stream completed but DONE not sent, sending now for session: {}", request.sessionId());
+                safeSendEvent(emitter, "[DONE]", completed);
+                safeComplete(emitter, completed);
+            }
+        });
+
         // 修复超时处理：不发送消息，直接完成
         emitter.onTimeout(() -> {
             log.warn("SSE timeout for session: {}", request.sessionId());
             if (!completed.get()) {
-                completed.set(true);
-                try { emitter.complete(); } catch (Exception ignored) {}
+                safeSendEvent(emitter, "[DONE]", completed);
+                safeComplete(emitter, completed);
             }
             heartbeatExecutor.shutdown();
         });
@@ -146,15 +158,17 @@ public class ChatController {
                 dataReceived[0] = true;
                 if (completed.get()) return;
                 try {
+                    // 在 chunk 处理循环内：
                     if (chunk.isLast()) {
+                        // 发送最终的 DONE 事件
                         safeSendEvent(emitter, "[DONE]", completed);
                         safeComplete(emitter, completed);
-                        log.debug("处理完成，返回结束标记{}","done");
                         String finalContent = fullContent.toString();
                         if (finalContent.isBlank()) finalContent = "处理完成，无文本返回。";
                         saveAssistantMessage(userId, request.sessionId(), executionId, finalContent);
                         streamFragmentStore.markCompleted(executionId);
                     } else {
+                        // 正常内容推送
                         String delta = chunk.getDelta();
                         if (delta != null && !delta.isEmpty()) {
                             fullContent.append(delta);
@@ -220,9 +234,7 @@ public class ChatController {
         if (completed.get()) return;
         completed.set(true);
         try {
-            emitter.send(SseEmitter.event().data("[DONE]"));
             emitter.complete();
-
         } catch (Exception ignored) {}
     }
 
