@@ -4,18 +4,14 @@ package com.thirdexploration.promengine.core.cache;
  * 预定义的缓存区域，不同区域拥有独立的配置和命名空间。
  */
 public enum CacheRegion {
-    /** Agent 状态缓存（碳基模式精力值等） */
     AGENT_STATE("agentState", 1000, 300),
-    /** 群聊状态缓存 */
     GROUP_STATE("groupState", 500, 1200),
-    /** 会话元数据缓存 */
     SESSION_META("sessionMeta", 2000, 600),
-    /** 工具调用统计缓存 */
     TOOL_STATS("toolStats", 500, 120),
-    /** 用户权限缓存 */
     USER_PERMISSIONS("userPermissions", 2000, 600),
-    /** 通用临时缓存 */
-    TEMP("temp", 1000, 60);
+    TEMP("temp", 1000, 60),
+    // 新增：流式片段缓存，最大 5000 个 executionId，每个 fragment 列表是 List<String>，TTL 1 小时
+    STREAM_FRAGMENT("streamFragment", 5000, 3600);
 
     private final String regionName;
     private final int maxSize;

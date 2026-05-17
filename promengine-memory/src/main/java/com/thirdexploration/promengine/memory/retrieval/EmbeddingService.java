@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Slf4j
 @Component
@@ -21,6 +22,8 @@ public class EmbeddingService {
     private final EmbeddingModel embeddingModel;
     private final Cache<String, float[]> successCache;
     private final Cache<String, Boolean> failureCache;
+    // 并发去重 map
+    private final ConcurrentHashMap<String, CompletableFuture<float[]>> pendingRequests = new ConcurrentHashMap<>();
 
     private static final int MAX_CHARS_PER_CHUNK = 2000;
     private static final int CHUNK_OVERLAP = 200;
@@ -42,40 +45,68 @@ public class EmbeddingService {
     }
 
     public float[] embed(String text) {
-        if (text == null || text.isBlank()) {
-            return new float[0];
-        }
-        String key = DigestUtils.md5DigestAsHex(text.getBytes(StandardCharsets.UTF_8));
+        if (text == null || text.isBlank()) return new float[0];
 
-        // 1. 成功缓存命中
+        // 1. 规范化文本（去除首尾空白、合并空白、截断过长文本）
+        String normalized = normalizeText(text);
+        String key = DigestUtils.md5DigestAsHex(normalized.getBytes(StandardCharsets.UTF_8));
+
+        // 2. 成功缓存
         float[] cached = successCache.getIfPresent(key);
-        if (cached != null) {
-            return cached;
-        }
+        if (cached != null) return cached;
 
-        // 2. 失败缓存命中，直接返回空，避免重复调用
+        // 3. 失败缓存
         if (failureCache.getIfPresent(key) != null) {
-            log.debug("Skipping embedding for text (cached failure): key={}", key);
+            log.trace("Skipping embedding for text (cached failure): key={}", key);
             return new float[0];
         }
 
-        // 3. 执行嵌入（带重试和超时）
-        float[] vector = tryEmbedWithRetry(text);
-        if (vector != null && vector.length > 0) {
-            successCache.put(key, vector);
-            return vector;
-        } else {
+        // 4. 并发去重：同一 key 只允许一个实际请求
+        CompletableFuture<float[]> future = pendingRequests.get(key);
+        if (future == null) {
+            future = CompletableFuture.supplyAsync(() -> {
+                try {
+                    float[] vector = tryEmbedWithRetry(normalized);
+                    if (vector != null && vector.length > 0) {
+                        successCache.put(key, vector);
+                        return vector;
+                    } else {
+                        failureCache.put(key, Boolean.TRUE);
+                        return new float[0];
+                    }
+                } finally {
+                    pendingRequests.remove(key);
+                }
+            });
+            pendingRequests.putIfAbsent(key, future);
+            future = pendingRequests.get(key);
+        }
+
+        try {
+            // 等待最多 30 秒，避免永久阻塞
+            return future.get(30, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.warn("Embedding failed for key {}: {}", key, e.getMessage());
             failureCache.put(key, Boolean.TRUE);
-            log.warn("Embedding failed for text key={}, caching failure for 1 minute", key);
             return new float[0];
         }
+    }
+
+    private String normalizeText(String text) {
+        String trimmed = text.trim();
+        // 限制最大长度，避免存储过长文本
+        if (trimmed.length() > 2000) {
+            trimmed = trimmed.substring(0, 2000);
+        }
+        // 将多个空白字符压缩为一个空格
+        trimmed = trimmed.replaceAll("\\s+", " ");
+        return trimmed;
     }
 
     private float[] tryEmbedWithRetry(String text) {
         Exception lastException = null;
         for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             try {
-                // 增加超时控制
                 ExecutorService executor = Executors.newSingleThreadExecutor();
                 Future<float[]> future = executor.submit(() -> {
                     if (text.length() <= MAX_CHARS_PER_CHUNK) {
@@ -92,21 +123,21 @@ public class EmbeddingService {
                 lastException = new RuntimeException("Empty embedding result");
             } catch (TimeoutException e) {
                 lastException = e;
-                log.warn("Embedding attempt {} timed out after {}s", attempt, EMBEDDING_TIMEOUT_SECONDS);
+                log.debug("Embedding attempt {} timed out after {}s", attempt, EMBEDDING_TIMEOUT_SECONDS);
             } catch (Exception e) {
                 lastException = e;
-                log.warn("Embedding attempt {} failed: {}", attempt, e.getMessage());
+                log.debug("Embedding attempt {} failed: {}", attempt, e.getMessage());
             }
             if (attempt < MAX_RETRIES) {
                 try {
                     Thread.sleep(RETRY_DELAY_MS);
-                } catch (InterruptedException e) {
+                } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
                     break;
                 }
             }
         }
-        log.error("Embedding failed after {} attempts: {}", MAX_RETRIES, lastException != null ? lastException.getMessage() : "unknown");
+        log.debug("Embedding failed after {} attempts", MAX_RETRIES);
         return null;
     }
 
@@ -129,19 +160,13 @@ public class EmbeddingService {
             start = end - CHUNK_OVERLAP;
             if (start >= text.length()) break;
         }
-        if (chunkVectors.isEmpty()) {
-            return new float[0];
-        }
+        if (chunkVectors.isEmpty()) return new float[0];
         int dim = chunkVectors.get(0).length;
         float[] aggregated = new float[dim];
         for (float[] vec : chunkVectors) {
-            for (int i = 0; i < dim; i++) {
-                aggregated[i] += vec[i];
-            }
+            for (int i = 0; i < dim; i++) aggregated[i] += vec[i];
         }
-        for (int i = 0; i < dim; i++) {
-            aggregated[i] /= chunkVectors.size();
-        }
+        for (int i = 0; i < dim; i++) aggregated[i] /= chunkVectors.size();
         return aggregated;
     }
 

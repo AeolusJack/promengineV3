@@ -6,8 +6,10 @@ import com.thirdexploration.promengine.core.AgentConfig;
 import com.thirdexploration.promengine.core.agent.AgentConfigProvider;
 import com.thirdexploration.promengine.core.agent.TaskPlan;
 import com.thirdexploration.promengine.core.agent.TaskPlanningStrategy;
+import com.thirdexploration.promengine.core.cache.StreamFragmentStore;
 import com.thirdexploration.promengine.core.domain.*;
 import com.thirdexploration.promengine.executor.config.OrchestratorProperties;
+import com.thirdexploration.promengine.executor.event.StreamCompletedEvent;
 import com.thirdexploration.promengine.executor.execution.ExecutionContext;
 import com.thirdexploration.promengine.executor.tool.registry.ToolRegistry;
 import com.thirdexploration.promengine.memory.api.UnifiedMemoryAPI;
@@ -18,6 +20,8 @@ import com.thirdexploration.promengine.neuro.ThinkingRippleGenerator;
 import com.thirdexploration.promengine.neuro.web.RippleWebSocketHandler;
 import com.thirdexploration.promengine.prompt.core.PromptContext;
 import com.thirdexploration.promengine.prompt.core.PromptPipeline;
+import io.micrometer.common.util.StringUtils;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.*;
@@ -27,6 +31,7 @@ import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import reactor.core.publisher.Flux;
@@ -41,6 +46,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
+@RequiredArgsConstructor
 @Slf4j
 @Component
 @ConditionalOnProperty(name = "promengine.orchestrator.mode", havingValue = "REACT")
@@ -56,6 +62,9 @@ public class ReactOrchestrator implements Orchestrator {
     private final ToolRegistry toolRegistry;
     private final ObjectMapper objectMapper;
     private final ReActStepRepository stepRepository;
+    private final StreamFragmentStore streamFragmentStore;
+    private final ApplicationEventPublisher eventPublisher;
+
 
     @Autowired(required = false)
     private TaskPlanningStrategy planningStrategy;
@@ -69,32 +78,11 @@ public class ReactOrchestrator implements Orchestrator {
     @Value("${promengine.orchestrator.llm-retry-delay-ms:1000}")
     private long llmRetryDelayMs;
 
-    @Value("${promengine.orchestrator.stream-timeout-seconds:120}")
+    @Value("${promengine.orchestrator.stream-timeout-seconds:1200}")
     private long streamTimeoutSeconds;
 
     private final Map<String, WindowedRipple> rippleWindows = new ConcurrentHashMap<>();
 
-    public ReactOrchestrator(ChatClient.Builder chatClientBuilder,
-                             ToolExecutor toolExecutor,
-                             UnifiedMemoryAPI memoryAPI,
-                             OrchestratorProperties properties,
-                             PromptPipeline promptPipeline,
-                             RippleWebSocketHandler rippleHandler,
-                             AgentConfigProvider agentConfigProvider,
-                             ToolRegistry toolRegistry,
-                             ObjectMapper objectMapper,
-                             ReActStepRepository stepRepository) {
-        this.chatClientBuilder = chatClientBuilder;
-        this.toolExecutor = toolExecutor;
-        this.memoryAPI = memoryAPI;
-        this.properties = properties;
-        this.promptPipeline = promptPipeline;
-        this.rippleHandler = rippleHandler;
-        this.agentConfigProvider = agentConfigProvider;
-        this.toolRegistry = toolRegistry;
-        this.objectMapper = objectMapper;
-        this.stepRepository = stepRepository;
-    }
 
     private static class WindowedRipple {
         long lastSent = 0;
@@ -242,14 +230,12 @@ public class ReactOrchestrator implements Orchestrator {
                     @Override
                     public boolean tryAdvance(java.util.function.Consumer<? super CompletionChunk> action) {
                         try {
-                            CompletionChunk chunk = queue.poll();
-                            if (chunk == null && !finished[0]) chunk = queue.take();
-                            if (chunk != null) {
-                                action.accept(chunk);
-                                if (chunk.isLast()) finished[0] = true;
-                                return true;
-                            }
-                            return false;
+                            // 移除主动超时，改为无限等待（除非流已标记完成）
+                            if (finished[0]) return false;
+                            CompletionChunk chunk = queue.take();  // 阻塞等待
+                            action.accept(chunk);
+                            if (chunk.isLast()) finished[0] = true;
+                            return true;
                         } catch (InterruptedException e) {
                             Thread.currentThread().interrupt();
                             return false;
@@ -277,7 +263,6 @@ public class ReactOrchestrator implements Orchestrator {
                                 String[] modelUsed, AtomicReference<String> finalAnswer,
                                 boolean[] finished, AgentConfig agentConfig) {
         int currentStep = ctx.nextStepNumber();
-//        log.info("======= startNextRound: stepCounter = {} , currentStep = {}", ctx.getStepCounter(), currentStep);
         if (currentStep > properties.getMaxSteps()) {
             finishStream(queue, finalAnswer.get() != null ? finalAnswer.get() : "超过最大步数",
                     finished, finalAnswer, ctx, agentConfig);
@@ -304,7 +289,16 @@ public class ReactOrchestrator implements Orchestrator {
                 .options(ToolCallingChatOptions.builder().internalToolExecutionEnabled(false).build())
                 .stream()
                 .chatResponse()
-                .timeout(Duration.ofSeconds(streamTimeoutSeconds));
+                .timeout(Duration.ofSeconds(streamTimeoutSeconds))
+                .onErrorResume(TimeoutException.class, e -> {
+                    log.warn("Stream timeout after {} seconds, terminating", streamTimeoutSeconds);
+                    queue.offer(CompletionChunk.builder()
+                            .delta("任务执行超时（" + streamTimeoutSeconds + "秒），请稍后重试。")
+                            .last(true)
+                            .build());
+                    finished[0] = true;
+                    return Flux.empty();
+                });
 
         List<String> roundTexts = new ArrayList<>();
         AtomicReference<Boolean> hasToolCall = new AtomicReference<>(false);
@@ -325,11 +319,13 @@ public class ReactOrchestrator implements Orchestrator {
             if (thinking != null && !thinking.isEmpty()) {
                 queue.offer(CompletionChunk.builder().delta("[思考] " + thinking).last(false).build());
                 roundTexts.add("[思考] " + thinking);
+                streamFragmentStore.addFragment(ctx.getExecutionId(), "[思考] " + thinking);
             } else if (text != null) {
                 String clean = cleanStreamText(text);
                 if (!clean.isEmpty()) {
                     roundTexts.add(clean);
                     queue.offer(CompletionChunk.builder().delta(clean).last(false).build());
+                    streamFragmentStore.addFragment(ctx.getExecutionId(), clean);
                     double entropy = Math.min(0.1 + Math.random() * 0.4, 0.5);
                     String color = entropy < 0.3 ? "green" : (entropy < 0.6 ? "orange" : "red");
                     sendRippleSampled(sessionId, entropy, color);
@@ -342,6 +338,7 @@ public class ReactOrchestrator implements Orchestrator {
             AssistantMessage lastMsg = lastAssistantMsg.get();
 
             if (lastMsg != null && hasToolCall.get() && properties.isToolUseEnabled()) {
+                // 工具调用分支（保持不变）
                 for (AssistantMessage.ToolCall tc : extractToolCalls(lastMsg)) {
                     pushAndSaveStep(sessionId, agentId, ReActStepEvent.builder()
                             .type("TOOL_CALL")
@@ -367,6 +364,7 @@ public class ReactOrchestrator implements Orchestrator {
                             .build());
                     queue.offer(CompletionChunk.builder()
                             .delta("[工具] " + tr.name() + " → " + tr.responseData()).last(false).build());
+                    streamFragmentStore.addFragment(ctx.getExecutionId(), "[工具] " + tr.name() + " → " + tr.responseData());
                 }
                 conversation.add(new ToolResponseMessage(toolResponses));
                 String immediate = cleanModelOutput(lastMsg.getText());
@@ -377,13 +375,24 @@ public class ReactOrchestrator implements Orchestrator {
                     startNextRound(chatClient, conversation, queue, ctx, modelUsed, finalAnswer, finished, agentConfig);
                 }
             } else {
-                String answer = cleanModelOutput(lastMsg != null ? lastMsg.getText() : fullAssistant);
-                if (answer == null || answer.isBlank()) answer = fullAssistant;
+                // 无工具调用分支
+                String answer = null;
+                if (!fullAssistant.isBlank()) {
+                    answer = fullAssistant;
+                } else if (lastMsg != null && lastMsg.getText() != null && !lastMsg.getText().isBlank()) {
+                    answer = cleanModelOutput(lastMsg.getText());
+                }
+                if (answer == null || answer.isBlank()) {
+                    answer = "模型未生成任何文本回复，可能仅执行了工具调用。";
+                    queue.offer(CompletionChunk.builder().delta(answer).last(false).build());
+                    streamFragmentStore.addFragment(ctx.getExecutionId(), answer);
+                }
                 finalAnswer.set(answer);
                 finishStream(queue, answer, finished, finalAnswer, ctx, agentConfig);
             }
         }).doOnError(e -> {
             log.error("Stream error", e);
+            if (finished[0]) return;
             pushAndSaveStep(sessionId, agentId, ReActStepEvent.builder()
                     .type("ERROR")
                     .executionId(ctx.getExecutionId())
@@ -399,11 +408,30 @@ public class ReactOrchestrator implements Orchestrator {
 
     private void finishStream(BlockingQueue<CompletionChunk> queue, String answer, boolean[] finished,
                               AtomicReference<String> finalAnswer, ExecutionContext ctx, AgentConfig agentConfig) {
-        queue.offer(CompletionChunk.builder().delta("").last(true).build());
+        if (finished[0]) return;
         finished[0] = true;
-        String validAnswer = (answer != null && !answer.isBlank()) ? answer : finalAnswer.get();
-        if (validAnswer == null || validAnswer.isBlank()) validAnswer = "模型未返回有效内容";
 
+        String validAnswer = (answer != null && !answer.isBlank()) ? answer : finalAnswer.get();
+        if (validAnswer == null || validAnswer.isBlank()) {
+            validAnswer = "任务执行完成，未生成文本回复。";
+        }
+
+        log.info("Finishing stream with answer: {}", validAnswer);
+        // 推送最终内容
+        queue.offer(CompletionChunk.builder().delta(validAnswer).last(false).build());
+        // 发送结束标记
+        queue.offer(CompletionChunk.builder().delta("[DONE]").last(false).build());
+        queue.offer(CompletionChunk.builder().delta("").last(true).build());
+
+        streamFragmentStore.markCompleted(ctx.getExecutionId());
+
+        // 发布事件，由监听器保存到 chat_messages（独立事务）
+        eventPublisher.publishEvent(new StreamCompletedEvent(this, ctx.getExecutionId(),
+                ctx.getUserInput().getSessionId(),
+                ctx.getUserId() != null ? ctx.getUserId() : "default-user",
+                validAnswer));
+
+        // 原有步骤事件和记忆存储
         pushAndSaveStep(ctx.getUserInput().getSessionId(), ctx.getAttribute("agentId", String.class),
                 ReActStepEvent.builder()
                         .type("COMPLETE")
@@ -436,8 +464,6 @@ public class ReactOrchestrator implements Orchestrator {
                         .timestamp(event.getTimestamp())
                         .build();
                 stepRepository.save(record);
-                String json = objectMapper.writeValueAsString(event);
-//                log.info("Pushing step event: {}", json);
             } catch (Exception e) {
                 log.warn("存储步骤事件失败", e);
             }
@@ -594,9 +620,10 @@ public class ReactOrchestrator implements Orchestrator {
 
     private String cleanModelOutput(String text) {
         if (text == null) return "";
+        // 只移除工具调用相关标记，不要删除普通字符
         return text.replaceAll("call:\\w+\\{[^}]*\\}", "")
                 .replaceAll("<tool_call\\|>|<\\|tool_response>", "")
-                .replaceAll("}", "").trim();
+                .trim();
     }
 
     private ChatResponse callLLMWithRetry(ChatClient chatClient, List<Message> conversation,

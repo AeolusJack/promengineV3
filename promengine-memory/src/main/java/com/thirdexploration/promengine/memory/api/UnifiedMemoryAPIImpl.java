@@ -78,6 +78,11 @@ public class UnifiedMemoryAPIImpl implements UnifiedMemoryAPI {
 
     @Override
     public void remember(MemoryEntry entry) {
+        // 跳过重要性过低的内容（如临时提示、中间结果）
+        if (entry.getImportance() < 0.3f) {
+            log.debug("Skip memory with low importance: {}", entry.getImportance());
+            return;
+        }
         MemoryMetadata metadata = MemoryMetadata.builder()
                 .userId(entry.getUserId())
                 .domain(entry.getDomain())

@@ -49,3 +49,4 @@ logging:
     com.thirdexploration.promengine: DEBUG
     com.thirdexploration.promengine.memory: TRACE   # 查看详细记忆操作
     org.springframework.web.HttpLogging: INFO
+    com.thirdexploration.promengine.memory.retrieval.EmbeddingService: WARN
