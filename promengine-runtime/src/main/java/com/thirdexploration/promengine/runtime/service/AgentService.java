@@ -1,12 +1,14 @@
 package com.thirdexploration.promengine.runtime.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.thirdexploration.promengine.core.tenant.TenantContext;
 import com.thirdexploration.promengine.runtime.model.AgentRecord;
 import com.thirdexploration.promengine.runtime.repository.AgentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -142,5 +144,42 @@ public class AgentService {
 
     private String toJson(Object obj) {
         try { return objectMapper.writeValueAsString(obj); } catch (Exception e) { return "[]"; }
+    }
+
+
+
+    public List<Map<String, Object>> listPublished() {
+        List<AgentRecord> records = agentRepository.findPublished();
+        return records.stream().map(this::toMap).collect(Collectors.toList());
+    }
+
+    public Map<String, Object> installFromMarket(String sourceAgentId, String userId) {
+        AgentRecord source = agentRepository.findById(sourceAgentId);
+        if (source == null || !source.isPublished()) {
+            throw new NoSuchElementException("Agent not available for installation");
+        }
+        // 复制一份到当前租户
+        AgentRecord copy = AgentRecord.builder()
+                .id(UUID.randomUUID().toString())
+                .tenantId(TenantContext.getOrDefault())
+                .userId(userId)
+                .name(source.getName() + " (from market)")
+                .description(source.getDescription())
+                .systemPrompt(source.getSystemPrompt())
+                .tools(source.getTools())
+                .skills(source.getSkills())
+                .published(false)
+                .createdAt(System.currentTimeMillis())
+                .build();
+        agentRepository.save(copy);
+        return toMap(copy);
+    }
+
+    public void setPublished(String id, String userId, boolean published) {
+        AgentRecord agent = agentRepository.findById(id);
+        if (!agent.getUserId().equals(userId)) {
+            throw new SecurityException("Access denied");
+        }
+        agentRepository.updatePublished(id, published);
     }
 }

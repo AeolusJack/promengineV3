@@ -7,6 +7,7 @@ import lombok.Data;
 @Builder
 public class AgentWorkflow {
     private String id;
+    private String tenantId;
     private String name;
     private String description;
     private String version;

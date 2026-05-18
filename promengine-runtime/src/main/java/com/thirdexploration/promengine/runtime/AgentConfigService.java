@@ -29,28 +29,6 @@ public class AgentConfigService implements AgentConfigProvider {
     private final AgentToolBindingRepository toolBindingRepository;
     private final AgentKnowledgeBaseRepository knowledgeBaseRepository;
 
-//    @Override
-//    public AgentConfig getConfig(String agentId) {
-//        AgentRecord record;
-//        try {
-//            record = agentRepository.findById(agentId);
-//        } catch (Exception e) {
-//            log.warn("Agent {} not found", agentId);
-//            return null;
-//        }
-//        if (record == null) return null;
-//
-//        return AgentConfig.builder()
-//                .agentId(record.getId())
-//                .systemPrompt(record.getSystemPrompt())
-//                .tools(parseTools(record.getTools()))
-//                .modelPreference(record.getModelPreference())
-//                .memoryDomain(record.getMemoryDomain())
-//                .enableHumanReview( record.isEnableHumanReview())
-//                .maxRetries(record.getMaxRetries() != null ? record.getMaxRetries() : 3)
-//                .timeoutSeconds(record.getTimeoutSeconds() != null ? record.getTimeoutSeconds() : 300)
-//                .build();
-//    }
 
     @Override
     public AgentConfig getConfig(String agentId) {

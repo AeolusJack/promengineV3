@@ -7,6 +7,7 @@ import lombok.Data;
 @Builder
 public class AgentKnowledgeBase {
     private String id;
+    private String tenantId;
     private String agentId;
     private String name;
     private String type;       // vector / graph / rule_file / memory_domain

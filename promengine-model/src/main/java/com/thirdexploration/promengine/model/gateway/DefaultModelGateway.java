@@ -14,7 +14,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
@@ -28,32 +27,41 @@ public class DefaultModelGateway implements ModelGateway {
     private final LoadAwareRouter loadAwareRouter;
     private final ModelGatewayProperties properties;
     private final Map<String, CircuitBreaker> circuitBreakers = new ConcurrentHashMap<>();
-    // 在 DefaultModelGateway 中增加字段
-    private final SemanticCache semanticCache;
-    private final EmbeddingService embeddingService; // 需定义接口
 
+    private final SemanticCache semanticCache;
+    private final EmbeddingService embeddingService;
 
     @Override
     public CompletionResult complete(CompletionRequest request) {
-        // 1. 生成提示词向量
+        // 语义缓存
         float[] queryVector = embeddingService.embed(request.getPrompt());
-        // 2. 查缓存
         CompletionResult cached = semanticCache.get(request.getPrompt(), queryVector);
         if (cached != null) {
-            log.debug("Semantic cache hit for prompt: {}", request.getPrompt().substring(0, Math.min(50, request.getPrompt().length())));
+            log.debug("Semantic cache hit");
             return cached;
         }
-        // 3. 正常路由调用
+
         String selectedProviderId = selectProvider(request);
         ModelAdapter adapter = providerRegistry.getAdapter(selectedProviderId);
-        if (adapter == null) throw new ModelUnavailableException("No available provider for request");
-        CircuitBreaker cb = circuitBreakers.computeIfAbsent(selectedProviderId, id -> new CircuitBreaker(id, properties.getCircuitBreaker()));
+        if (adapter == null) {
+            throw new ModelUnavailableException("No available provider for request");
+        }
+
+        CircuitBreaker cb = circuitBreakers.computeIfAbsent(selectedProviderId,
+                id -> new CircuitBreaker(id, properties.getCircuitBreaker()));
+
+        loadAwareRouter.recordBefore(selectedProviderId);
+        long start = System.currentTimeMillis();
         try {
             CompletionResult result = cb.execute(() -> adapter.complete(request));
-            // 4. 存入缓存
+            long latency = System.currentTimeMillis() - start;
+            loadAwareRouter.recordAfter(selectedProviderId, latency);
+
             semanticCache.put(request.getPrompt(), queryVector, result);
             return result;
         } catch (Exception e) {
+            long latency = System.currentTimeMillis() - start;
+            loadAwareRouter.recordAfter(selectedProviderId, latency);
             log.warn("Provider {} failed, attempting fallback", selectedProviderId, e);
             return executeWithFallback(request, selectedProviderId);
         }
@@ -61,10 +69,23 @@ public class DefaultModelGateway implements ModelGateway {
 
     @Override
     public Stream<CompletionChunk> stream(CompletionRequest request) {
-        String providerId = selectProvider(request);
-        ModelAdapter adapter = providerRegistry.getAdapter(providerId);
-        if (adapter == null) throw new ModelUnavailableException("No provider");
-        return adapter.stream(request);
+        String selectedProviderId = selectProvider(request);
+        ModelAdapter adapter = providerRegistry.getAdapter(selectedProviderId);
+        if (adapter == null) {
+            throw new ModelUnavailableException("No available provider for streaming");
+        }
+
+        loadAwareRouter.recordBefore(selectedProviderId);
+        try {
+            Stream<CompletionChunk> chunkStream = adapter.stream(request);
+            // 当流关闭时记录负载（延迟未知，设为0）
+            chunkStream.onClose(() -> loadAwareRouter.recordAfter(selectedProviderId, 0));
+            return chunkStream;
+        } catch (Exception e) {
+            loadAwareRouter.recordAfter(selectedProviderId, 0);
+            log.warn("Stream failed for provider {}, attempting fallback", selectedProviderId, e);
+            return executeStreamFallback(request, selectedProviderId);
+        }
     }
 
     @Override
@@ -74,7 +95,7 @@ public class DefaultModelGateway implements ModelGateway {
 
     @Override
     public void addFallbackChain(List<String> modelIds) {
-        // 动态调整降级链
+        properties.getRouting().setFallbackChain(modelIds);
     }
 
     @Override
@@ -87,8 +108,9 @@ public class DefaultModelGateway implements ModelGateway {
         return loadAwareRouter.getLoadInfo();
     }
 
+    // ------------------- 内部方法 -------------------
+
     private String selectProvider(CompletionRequest request) {
-        // 综合语义路由和负载感知
         String semanticChoice = semanticRouter.select(request);
         if (properties.getRouting().isLoadAware()) {
             return loadAwareRouter.adjust(semanticChoice, request);
@@ -100,15 +122,42 @@ public class DefaultModelGateway implements ModelGateway {
         List<String> fallbackChain = properties.getRouting().getFallbackChain();
         for (String providerId : fallbackChain) {
             if (providerId.equals(failedProvider)) continue;
+            ModelAdapter adapter = providerRegistry.getAdapter(providerId);
+            if (adapter == null) continue;
+
+            loadAwareRouter.recordBefore(providerId);
+            long start = System.currentTimeMillis();
             try {
-                ModelAdapter adapter = providerRegistry.getAdapter(providerId);
-                if (adapter != null) {
-                    return adapter.complete(request);
-                }
+                CompletionResult result = adapter.complete(request);
+                long latency = System.currentTimeMillis() - start;
+                loadAwareRouter.recordAfter(providerId, latency);
+                return result;
             } catch (Exception e) {
-                log.warn("Fallback provider {} failed", providerId, e);
+                long latency = System.currentTimeMillis() - start;
+                loadAwareRouter.recordAfter(providerId, latency);
+                log.warn("Fallback provider {} also failed", providerId, e);
             }
         }
         throw new ModelUnavailableException("All providers failed for request");
+    }
+
+    private Stream<CompletionChunk> executeStreamFallback(CompletionRequest request, String failedProvider) {
+        List<String> fallbackChain = properties.getRouting().getFallbackChain();
+        for (String providerId : fallbackChain) {
+            if (providerId.equals(failedProvider)) continue;
+            ModelAdapter adapter = providerRegistry.getAdapter(providerId);
+            if (adapter == null) continue;
+
+            loadAwareRouter.recordBefore(providerId);
+            try {
+                Stream<CompletionChunk> chunkStream = adapter.stream(request);
+                chunkStream.onClose(() -> loadAwareRouter.recordAfter(providerId, 0));
+                return chunkStream;
+            } catch (Exception e) {
+                loadAwareRouter.recordAfter(providerId, 0);
+                log.warn("Fallback stream provider {} failed", providerId, e);
+            }
+        }
+        throw new ModelUnavailableException("All streaming providers failed");
     }
 }

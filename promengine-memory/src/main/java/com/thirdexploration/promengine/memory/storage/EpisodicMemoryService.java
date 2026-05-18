@@ -2,8 +2,10 @@ package com.thirdexploration.promengine.memory.storage;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.thirdexploration.promengine.core.context.VisibilityContext;
 import com.thirdexploration.promengine.memory.config.MemoryMetadataRegistry;
 import com.thirdexploration.promengine.memory.model.MemoryEntry;
+import com.thirdexploration.promengine.memory.model.MemoryQuery;
 import com.thirdexploration.promengine.memory.model.MemoryRecord;
 import com.thirdexploration.promengine.memory.model.Provenance;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +40,58 @@ public class EpisodicMemoryService {
     private final ObjectMapper objectMapper;
     private final MemoryMetadataRegistry registry;
 
+
+    /**
+     * 根据 MemoryQuery 中的共享级别和当前用户上下文，构建可见性过滤的 SQL 条件片段与参数。
+     * 返回一个包含 SQL 片段和参数的 Helper 对象。
+     */
+    private VisibilityCondition buildVisibilityCondition(MemoryQuery query) {
+        StringBuilder sql = new StringBuilder();
+        List<Object> params = new ArrayList<>();
+
+        String sharingLevel = query.getMinSharingLevel();
+        if (sharingLevel == null) {
+            sharingLevel = "private"; // 默认仅自己
+        }
+
+        // 按照共享级别从严格到宽松依次添加条件
+        switch (sharingLevel) {
+            case "global":
+                // 全局共享无需额外过滤
+                break;
+            case "tenant_shared":
+                // 租户内共享：sharing_level IN ('tenant_shared', 'private') AND (tenant_id = ? AND (user_id = ? OR sharing_level = 'tenant_shared'))
+                sql.append(" AND (sharing_level IN ('tenant_shared', 'private') AND tenant_id = ? AND (user_id = ? OR sharing_level = 'tenant_shared'))");
+                params.add(query.getCurrentTenantId() != null ? query.getCurrentTenantId() : "default");
+                params.add(query.getCurrentUserId());
+                break;
+            case "team_shared":
+                // 团队内共享：sharing_level IN ('team_shared', 'private') AND tenant_id = ? AND (user_id = ? OR sharing_level = 'team_shared' AND team_id IN (...))
+                sql.append(" AND (sharing_level IN ('team_shared', 'private') AND tenant_id = ? AND (user_id = ? OR sharing_level = 'team_shared' AND team_id IN (");
+                // 动态添加团队ID占位符
+                List<String> teamIds = query.getCurrentTeamIds() != null ? query.getCurrentTeamIds() : Collections.emptyList();
+                for (int i = 0; i < teamIds.size(); i++) {
+                    sql.append("?");
+                    if (i < teamIds.size() - 1) sql.append(",");
+                }
+                sql.append(")))");
+                params.add(query.getCurrentTenantId() != null ? query.getCurrentTenantId() : "default");
+                params.add(query.getCurrentUserId());
+                params.addAll(teamIds);
+                break;
+            case "private":
+            default:
+                // 仅自己：sharing_level = 'private' AND user_id = ?
+                sql.append(" AND sharing_level = 'private' AND user_id = ?");
+                params.add(query.getCurrentUserId());
+                break;
+        }
+
+        return new VisibilityCondition(sql.toString(), params);
+    }
+
+    // 辅助类
+    private record VisibilityCondition(String sql, List<Object> params) {}
     // ---------- SQL 语句（使用传统字符串，兼容所有 JDK 版本）----------
     private static final String INSERT_SQL = """
             INSERT INTO episodic_memory
@@ -145,28 +199,48 @@ public class EpisodicMemoryService {
     }
     // ---------- 查询操作（只读事务）----------
 
-    @Transactional(readOnly = true)
-    public List<MemoryRecord> queryByTimeRange(String userId, String domain, String sessionId,
-                                               Instant from, Instant to, int limit, String projectId) {
-        MapSqlParameterSource params = new MapSqlParameterSource()
-                .addValue("userId", userId)
-                .addValue("domain", domain)
-                .addValue("from", from.toEpochMilli())
-                .addValue("to", to.toEpochMilli());
+    public List<MemoryRecord> queryByTimeRange(String userId, String domain, String sessionId, Instant from, Instant to, int limit, String projectId) {
+        // 构建基础查询
+        StringBuilder sqlBuilder = new StringBuilder("SELECT * FROM episodic_memory WHERE domain = ? AND timestamp BETWEEN ? AND ? AND deleted = 0");
+        List<Object> params = new ArrayList<>();
+        params.add(domain);
+        params.add(from.toEpochMilli());
+        params.add(to.toEpochMilli());
 
-        StringBuilder sqlBuilder = new StringBuilder(SELECT_BY_TIME_RANGE_BASE);
+        if (userId != null && !userId.isBlank()) {
+            sqlBuilder.append(" AND user_id = ?");
+            params.add(userId);
+        }
         if (sessionId != null && !sessionId.isBlank()) {
-            sqlBuilder.append(" AND session_id = :sessionId");
-            params.addValue("sessionId", sessionId);
+            sqlBuilder.append(" AND session_id = ?");
+            params.add(sessionId);
         }
         if (projectId != null && !projectId.isBlank()) {
-            sqlBuilder.append(" AND project_id = :projectId");
-            params.addValue("projectId", projectId);
+            sqlBuilder.append(" AND project_id = ?");
+            params.add(projectId);
         }
-        sqlBuilder.append(" ORDER BY strength DESC, timestamp DESC LIMIT :limit");
-        params.addValue("limit", limit);
 
-        return namedJdbcTemplate.query(sqlBuilder.toString(), params, new EpisodicRowMapper(objectMapper));
+        // 添加可见性过滤（基于共享级别）
+        MemoryQuery query = MemoryQuery.builder()
+                .currentUserId(userId) // 实际调用时可能传入
+                .currentTeamIds(getCurrentTeamIds()) // 从 VisibilityContext 获取
+                .currentTenantId(getCurrentTenantId())
+                .minSharingLevel("private") // 可从上层传入
+                .build();
+        VisibilityCondition vc = buildVisibilityCondition(query);
+        sqlBuilder.append(vc.sql);
+        params.addAll(vc.params);
+
+        sqlBuilder.append(" ORDER BY strength DESC, timestamp DESC LIMIT ?");
+        params.add(limit);
+
+        return jdbcTemplate.query(sqlBuilder.toString(), new EpisodicRowMapper(objectMapper), params.toArray());
+    }
+    private List<String> getCurrentTeamIds() {
+        return VisibilityContext.get().getTeamIds();
+    }
+    private String getCurrentTenantId() {
+        return VisibilityContext.get().getTenantId();
     }
 
     @Transactional(readOnly = true)

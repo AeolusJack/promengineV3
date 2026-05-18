@@ -54,6 +54,25 @@ public class MemoryQuery {
      */
     private String minSharingLevel;
 
+  //todo
+
+    /**
+     * 当前用户ID（由系统自动填充，用于隔离判断）
+     */
+    private String currentUserId;
+
+    /**
+     * 当前用户所属团队ID列表（用于 team_shared 判断）
+     */
+    private List<String> currentTeamIds;
+
+    /**
+     * 当前租户ID（用于 tenant_shared 判断）
+     */
+    private String currentTenantId;
+
+
+
     /**
      * 最大返回结果数
      */

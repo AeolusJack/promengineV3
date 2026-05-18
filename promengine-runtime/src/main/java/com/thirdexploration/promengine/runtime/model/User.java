@@ -7,6 +7,7 @@ import lombok.Data;
 @Builder
 public class User {
     private String id;
+    private String tenantId;
     private String username;
     private String password;   // 加密存储
     private String nickname;

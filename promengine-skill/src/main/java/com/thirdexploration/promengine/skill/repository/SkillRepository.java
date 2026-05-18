@@ -94,4 +94,19 @@ public class SkillRepository {
                     .build();
         }
     }
+
+    public List<SkillRecord> findAllByTenant(String tenantId) {
+        String sql = "SELECT * FROM skills WHERE tenant_id = ? ORDER BY updated_at DESC";
+        return jdbcTemplate.query(sql, new SkillRowMapper(), tenantId);
+    }
+
+    public List<SkillRecord> findPublished() {
+        String sql = "SELECT * FROM skills WHERE published = 1 AND enabled = 1 ORDER BY updated_at DESC";
+        return jdbcTemplate.query(sql, new SkillRowMapper());
+    }
+
+    public void updatePublished(String id, boolean published) {
+        jdbcTemplate.update("UPDATE skills SET published = ?, updated_at = ? WHERE id = ?",
+                published ? 1 : 0, System.currentTimeMillis(), id);
+    }
 }

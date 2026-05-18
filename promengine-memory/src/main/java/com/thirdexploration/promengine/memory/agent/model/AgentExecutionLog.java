@@ -7,6 +7,7 @@ import lombok.Data;
 @Builder
 public class AgentExecutionLog {
     private String id;
+    private String tenantId;
     private String agentId;
     private String sessionId;
     private String taskId;

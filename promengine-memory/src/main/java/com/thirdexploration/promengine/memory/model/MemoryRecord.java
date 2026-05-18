@@ -20,7 +20,7 @@ public class MemoryRecord {
     private String userId;
     private String projectId;
     private String sessionId;
-
+    private String tenantId;
     // ========== 内容 ==========
     private String content;
     private String summary;

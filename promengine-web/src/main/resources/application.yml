@@ -121,6 +121,8 @@ promengine:
         headers:
           Content-Type: application/json
           MCP-Protocol-Version: "2025-11-25"
+  devtools:
+    shadow-mode-enabled: false   # 默认关闭
       # 可继续添加其他 MCP 服务器
       # - id: filesystem
       #   name: 本地文件系统

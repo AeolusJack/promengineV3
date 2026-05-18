@@ -1,6 +1,7 @@
 package com.thirdexploration.promengine.executor.tool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.thirdexploration.promengine.core.trace.TraceContext;
 import com.thirdexploration.promengine.executor.ToolExecutor;
 import com.thirdexploration.promengine.executor.tool.registry.ToolRegistry;
 import jakarta.annotation.PostConstruct;
@@ -32,6 +33,8 @@ public class SandboxedToolExecutor implements ToolExecutor {
 
     @Override
     public String execute(AssistantMessage.ToolCall toolCall) {
+        String traceId = TraceContext.getTraceId();
+        TraceContext.setTraceId(traceId);
         String toolName = toolCall.name();
         //观测日志开始
         String arguments = toolCall.arguments();

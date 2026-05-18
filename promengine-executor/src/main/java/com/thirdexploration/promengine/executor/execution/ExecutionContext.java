@@ -2,6 +2,7 @@ package com.thirdexploration.promengine.executor.execution;
 
 import com.thirdexploration.promengine.core.domain.TaskContext;
 import com.thirdexploration.promengine.core.domain.UserInput;
+import com.thirdexploration.promengine.core.trace.TraceContext;
 import lombok.Builder;
 import lombok.Data;
 
@@ -72,10 +73,7 @@ public class ExecutionContext {
     public int nextStepNumber() {
         return stepCounter.incrementAndGet();
     }
-//    private int stepCounter = 0;
-//    public synchronized int nextStepNumber() {
-//        return ++stepCounter;
-//    }
+    private String traceId;  // 新增
     /**
      * 便捷构造方法：基于 UserInput 创建默认上下文。
      *
@@ -89,9 +87,11 @@ public class ExecutionContext {
                 .filter(String.class::isInstance)
                 .map(String.class::cast)
                 .orElseGet(ExecutionContext::generateExecutionId);
-
+         // 从 MDC 获取当前 traceId（如果有）
+        String traceId = TraceContext.getTraceId();
         ExecutionContext ctx = ExecutionContext.builder()
                 .executionId(executionId)
+                .traceId(traceId)
                 .sessionId(input.getSessionId())
                 .userId(input.getUserId())
                 .userInput(input)

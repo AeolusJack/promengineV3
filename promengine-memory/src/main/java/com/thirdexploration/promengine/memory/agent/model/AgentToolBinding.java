@@ -7,6 +7,7 @@ import lombok.Data;
 @Builder
 public class AgentToolBinding {
     private String id;
+    private String tenantId;
     private String agentId;
     private String toolName;
     private String config;     // JSON

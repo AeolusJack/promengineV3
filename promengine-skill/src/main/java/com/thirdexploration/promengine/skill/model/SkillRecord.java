@@ -7,6 +7,7 @@ import lombok.Data;
 @Builder
 public class SkillRecord {
     private String id;
+    private String tenantId;
     private String name;
     private String description;
     private String version;
@@ -17,4 +18,5 @@ public class SkillRecord {
     private String parameters;       // JSON object string
     private long createdAt;
     private long updatedAt;
+    private boolean  published;
 }

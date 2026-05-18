@@ -8,6 +8,7 @@ import lombok.Data;
 public class AgentRecord {
     private String id;
     private String userId;
+    private String tenantId;
     private String name;
     private String description;
     private String avatar;
@@ -34,5 +35,6 @@ public class AgentRecord {
     private String fallbackAgentId;
     private String planningSkillName;
     private String type;
+    private boolean published;
 
 }

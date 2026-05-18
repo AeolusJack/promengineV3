@@ -1,5 +1,7 @@
 package com.thirdexploration.promengine.web.security;
 
+import com.thirdexploration.promengine.core.context.VisibilityContext;
+import com.thirdexploration.promengine.core.tenant.TenantContext;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -9,8 +11,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.Collections;
-import java.util.Enumeration;
+import java.util.*;
 
 @Component
 public class JwtHeaderFilter extends OncePerRequestFilter {
@@ -53,6 +54,29 @@ public class JwtHeaderFilter extends OncePerRequestFilter {
         // 如果解析成功，包装请求并注入 X-User-Id 头
         if (userId != null) {
             String finalUserId = userId;
+            // 提取租户ID（可从 token 或单独请求头获取）
+            String tenantId = null;
+            try {
+                tenantId = jwtUtil.getTenantIdFromToken(token);
+            } catch (Exception e) {
+                // 忽略
+            }
+            if (tenantId == null) {
+                tenantId = request.getHeader("X-Tenant-Id");
+            }
+            if (tenantId == null) {
+                tenantId = "default";
+            }
+
+            List<String> teamIds = new ArrayList<>();
+            String teamHeader = request.getHeader("X-Team-Ids");
+            if (teamHeader != null) {
+                teamIds = Arrays.asList(teamHeader.split(","));
+            }
+
+            VisibilityContext visibilityContext = new VisibilityContext(userId, teamIds, tenantId);
+            VisibilityContext.set(visibilityContext);
+            TenantContext.set(tenantId);
             HttpServletRequestWrapper wrappedRequest = new HttpServletRequestWrapper(request) {
                 @Override
                 public String getHeader(String name) {

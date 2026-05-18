@@ -49,4 +49,8 @@ public class JwtUtil {
         return Jwts.parser().verifyWith(key).build()
                 .parseSignedClaims(token).getPayload();
     }
+
+    public String getTenantIdFromToken(String token) {
+        return getClaims(token).get("tenant_id", String.class);
+    }
 }

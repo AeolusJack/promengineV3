@@ -1,5 +1,6 @@
 package com.thirdexploration.promengine.web.controller;
 
+import com.thirdexploration.promengine.core.context.VisibilityContext;
 import com.thirdexploration.promengine.memory.api.UnifiedMemoryAPI;
 import com.thirdexploration.promengine.memory.governance.ProceduralMemoryGate;
 import com.thirdexploration.promengine.memory.model.*;
@@ -52,13 +53,15 @@ public class MemoryController {
         String domain = (String) body.getOrDefault("domain", "general");
         int maxResults = body.containsKey("maxResults") ? ((Number) body.get("maxResults")).intValue() : 10;
         MemoryQuery query = MemoryQuery.builder()
-                .userId(userId)
                 .text(text)
+                .userId(userId)
                 .domain(domain)
                 .maxResults(maxResults)
-                .includeWorking(true)
-                .includeEpisodic(true)
-                .includeSemantic(true)
+                .currentUserId(userId)
+                .currentTeamIds(VisibilityContext.get().getTeamIds())
+                .currentTenantId(VisibilityContext.get().getTenantId())
+                // 用户可通过参数指定最小共享级别，默认为 private
+                .minSharingLevel((String) body.getOrDefault("minSharingLevel", "private"))
                 .build();
         List<MemoryEntry> entries = unifiedMemoryAPI.recall(query);
         return ApiResponse.ok(entries);

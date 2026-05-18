@@ -8,6 +8,7 @@ import com.thirdexploration.promengine.core.cache.StreamFragmentStore;
 import com.thirdexploration.promengine.core.context.ConversationContext;
 import com.thirdexploration.promengine.core.context.ConversationContextBuilder;
 import com.thirdexploration.promengine.core.domain.*;
+import com.thirdexploration.promengine.core.trace.TraceContext;
 import com.thirdexploration.promengine.executor.config.OrchestratorProperties;
 import com.thirdexploration.promengine.executor.event.StreamCompletedEvent;
 import com.thirdexploration.promengine.executor.execution.ExecutionContext;
@@ -144,7 +145,7 @@ public class ReactOrchestrator implements Orchestrator {
         String agentId = ctx.getAttribute("agentId", String.class);
         AgentConfig agentConfig = agentId != null ? agentConfigProvider.getConfig(agentId) : null;
         String sessionId = ctx.getUserInput().getSessionId();
-
+        TraceContext.setTraceId(ctx.getTraceId()); // 传播 traceId
         log.info("ReactOrchestrator (M7) started for session: {}", sessionId);
         long startTime = System.currentTimeMillis();
 
@@ -229,6 +230,7 @@ public class ReactOrchestrator implements Orchestrator {
             if (finalAnswer != null) {
                 storeConversationMemoryAsync(ctx, finalAnswer, memoryDomain);
             }
+            TraceContext.clear();
         }
 
         logCompletion(ctx.getStepCounter().get(), finalAnswer, modelUsed);
@@ -248,6 +250,7 @@ public class ReactOrchestrator implements Orchestrator {
 
     @Override
     public Stream<CompletionChunk> executeStream(ExecutionContext ctx) {
+        TraceContext.setTraceId(ctx.getTraceId());
         String agentId = ctx.getAttribute("agentId", String.class);
         AgentConfig agentConfig = agentId != null ? agentConfigProvider.getConfig(agentId) : null;
         String sessionId = ctx.getUserInput().getSessionId();
@@ -302,7 +305,7 @@ public class ReactOrchestrator implements Orchestrator {
                             return false;
                         }
                     }
-                }, false);
+                }, false).onClose(TraceContext::clear);
     }
 
     private void streamReActLoop(ChatClient chatClient, List<Message> conversation, ExecutionContext ctx,

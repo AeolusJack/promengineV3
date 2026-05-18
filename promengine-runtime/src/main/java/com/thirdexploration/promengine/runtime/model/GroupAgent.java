@@ -6,6 +6,7 @@ import lombok.Data;
 @Data
 @Builder
 public class GroupAgent {
+    private String tenantId;
     private String agentId;
     private String name;
     private String avatar;

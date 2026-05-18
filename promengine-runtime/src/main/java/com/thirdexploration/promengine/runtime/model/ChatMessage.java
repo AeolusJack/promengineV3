@@ -7,6 +7,7 @@ import lombok.Data;
 @Builder
 public class ChatMessage {
     private String id;
+    private String tenantId;
     private String userId;
     private String sessionId;
     private String sessionName;   // 新增

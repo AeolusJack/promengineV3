@@ -14,6 +14,7 @@ import com.thirdexploration.promengine.executor.execution.ExecutionContext;
 import com.thirdexploration.promengine.executor.execution.TaskQueue;
 import com.thirdexploration.promengine.memory.api.UnifiedMemoryAPI;
 import com.thirdexploration.promengine.model.gateway.DefaultModelGateway;
+import com.thirdexploration.promengine.runtime.config.ShadowModeProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,8 +48,9 @@ public class AgentRuntimeImpl implements AgentRuntime {
     private final TaskQueue taskQueue;
     private volatile boolean running = false;
     private final DevToolsProperties devToolsProperties;
+    private final ShadowModeProperties shadowModeProperties;
     @Autowired(required = false)
-    private TaskPlanningStrategy shadowPlanningStrategy;
+    private TaskPlanningStrategy shadowPlanningStrategy; // 影子规划器
     @Override
     public void start() {
         running = true;
@@ -80,20 +82,21 @@ public class AgentRuntimeImpl implements AgentRuntime {
         ExecutionContext ctx = ExecutionContext.of(input);
         CompletableFuture<Response> mainFuture = orchestrator.execute(ctx);
 
-        // 影子模式：仅当 devtools 启用且影子规划器存在时异步执行
-        if (devToolsProperties.isShadowModeEnabled() && shadowPlanningStrategy != null) {
+        if (shadowModeProperties.isShadowModeEnabled() && shadowPlanningStrategy != null) {
             CompletableFuture.runAsync(() -> {
                 try {
-                    // 从请求中提取 agentConfig（如果前端传了）
                     Map<String, Object> shadowCtx = new HashMap<>();
                     Object agentConfigObj = input.getMetadata().get("agentConfig");
                     if (agentConfigObj instanceof Map) {
                         shadowCtx.put("agentConfig", agentConfigObj);
                     }
-                    List<TaskPlan.Step> shadowPlan = shadowPlanningStrategy.generatePlan(input.getText(), shadowCtx);
-                    log.info("[SHADOW] Shadow plan generated with {} steps", shadowPlan.size());
+                    long start = System.currentTimeMillis();
+                    List<TaskPlan.Step> plan = shadowPlanningStrategy.generatePlan(input.getText(), shadowCtx);
+                    long took = System.currentTimeMillis() - start;
+                    log.info("[SHADOW] session={} plan_size={} took_ms={}",
+                            input.getSessionId(), plan.size(), took);
                 } catch (Exception e) {
-                    log.error("[SHADOW] Shadow execution failed", e);
+                    log.error("[SHADOW] failed", e);
                 }
             });
         }

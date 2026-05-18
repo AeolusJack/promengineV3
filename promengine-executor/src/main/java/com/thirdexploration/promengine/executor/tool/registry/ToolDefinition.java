@@ -20,6 +20,9 @@ public class ToolDefinition {
     private boolean enabled;
     private List<ParameterDef> parameters;
     private SandboxPolicyDef sandboxPolicy;
+    // 新增字段
+    private String tenantId;      // 所属租户，系统工具为 "system"
+    private boolean published;    // 是否已发布到市场
     //  追加字段
     private RiskLevel riskLevel = RiskLevel.LOW;
     private List<String> requiredPermissions = List.of();

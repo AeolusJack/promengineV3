@@ -8,6 +8,7 @@ import java.util.List;
 @Builder
 public class AgentGroup {
     private String id;
+    private String tenantId;
     private String userId;
     private String name;
     private String topic;

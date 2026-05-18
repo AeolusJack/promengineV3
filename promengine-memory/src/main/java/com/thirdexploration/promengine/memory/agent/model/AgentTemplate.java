@@ -7,6 +7,7 @@ import lombok.Data;
 @Builder
 public class AgentTemplate {
     private String id;
+    private String tenantId;
     private String name;
     private String category;
     private String description;
